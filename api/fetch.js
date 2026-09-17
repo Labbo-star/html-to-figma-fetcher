@@ -3,11 +3,10 @@ const net = require('node:net');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 
-const MAX_LAYERS = 2600;
+const MAX_LAYERS = 2200;
 const MAX_PAGE_HEIGHT = 30000;
-const NAV_TIMEOUT_MS = 25000;
-const VIEWPORT_WIDTH = 1440;
 const VIEWPORT_HEIGHT = 1000;
+const NAV_TIMEOUT_MS = 25000;
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -21,17 +20,12 @@ function isPrivateIPv4(ip) {
   const p = ip.split('.').map(Number);
   if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
   const [a, b] = p;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
+  return a === 0 || a === 10 || a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
+    (a === 198 && (b === 18 || b === 19)) || a >= 224;
 }
 
 function isPrivateIPv6(ip) {
@@ -41,33 +35,22 @@ function isPrivateIPv6(ip) {
   if (/^fe[89ab]/.test(value)) return true;
   if (value.startsWith('::ffff:')) {
     const v4 = value.slice(7);
-    if (net.isIP(v4) === 4) return isPrivateIPv4(v4);
+    return net.isIP(v4) === 4 ? isPrivateIPv4(v4) : true;
   }
   return false;
 }
 
 function isPrivateIp(ip) {
-  const kind = net.isIP(ip);
-  if (kind === 4) return isPrivateIPv4(ip);
-  if (kind === 6) return isPrivateIPv6(ip);
-  return true;
+  const type = net.isIP(ip);
+  return type === 4 ? isPrivateIPv4(ip) : type === 6 ? isPrivateIPv6(ip) : true;
 }
 
 const hostSafetyCache = new Map();
 async function assertPublicUrl(rawUrl) {
   let url;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error('Некорректный URL');
-  }
-
-  if (!['http:', 'https:'].includes(url.protocol)) {
-    throw new Error('Разрешены только http/https ссылки');
-  }
-  if (url.username || url.password) {
-    throw new Error('URL с логином/паролем не поддерживаются');
-  }
+  try { url = new URL(rawUrl); } catch { throw new Error('Некорректный URL'); }
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Разрешены только http/https ссылки');
+  if (url.username || url.password) throw new Error('URL с логином/паролем не поддерживаются');
 
   const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
@@ -91,11 +74,113 @@ async function assertPublicUrl(rawUrl) {
     dns.resolve6(hostname).catch(() => []),
   ]);
   const addresses = [...v4, ...v6];
-  const safe = addresses.length > 0 && !addresses.some(isPrivateIp);
-  hostSafetyCache.set(hostname, safe);
   if (!addresses.length) throw new Error('Домен не найден');
+  const safe = !addresses.some(isPrivateIp);
+  hostSafetyCache.set(hostname, safe);
   if (!safe) throw new Error('Сайт ведёт на приватный IP-адрес');
   return url;
+}
+
+function escText(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(value) {
+  return escText(value).replace(/"/g, '&quot;');
+}
+function channel(v) { return Math.max(0, Math.min(255, Math.round((Number(v) || 0) * 255))); }
+function alpha(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
+function cssColor(c) {
+  if (!c) return 'rgba(0,0,0,0)';
+  return `rgba(${channel(c.r)},${channel(c.g)},${channel(c.b)},${alpha(c.a)})`;
+}
+function fillCss(fill) {
+  if (!fill) return 'transparent';
+  if (fill.kind === 'solid') return cssColor(fill.color);
+  if (fill.kind === 'linear' && Array.isArray(fill.stops) && fill.stops.length) {
+    const stops = fill.stops.map((s) => `${cssColor(s.color)} ${Math.round((Number(s.position) || 0) * 100)}%`).join(',');
+    return `linear-gradient(${Number(fill.angle) || 180}deg,${stops})`;
+  }
+  return 'transparent';
+}
+function layerCommonStyle(layer, localY) {
+  return [
+    'position:absolute',
+    `left:${Number(layer.x) || 0}px`,
+    `top:${Number(localY) || 0}px`,
+    `width:${Math.max(1, Number(layer.width) || 1)}px`,
+    `height:${Math.max(1, Number(layer.height) || 1)}px`,
+    `opacity:${Math.max(0.01, Math.min(1, Number(layer.opacity) || 1))}`,
+    `z-index:${Number(layer.z) || 0}`,
+    'box-sizing:border-box',
+  ];
+}
+function snapshotToHtml(snapshot) {
+  const sections = Array.isArray(snapshot.sections) && snapshot.sections.length
+    ? snapshot.sections.slice().sort((a, b) => a.y - b.y)
+    : [{ id: 'section-0', name: 'page', y: 0, height: snapshot.height || 1 }];
+  const byId = new Map(sections.map((s) => [s.id, []]));
+
+  for (const layer of snapshot.layers || []) {
+    let id = layer.sectionId;
+    if (!byId.has(id)) {
+      const y = Number(layer.y) || 0;
+      const match = sections.find((s) => y >= s.y - 2 && y <= s.y + s.height + 2);
+      id = match ? match.id : sections[0].id;
+    }
+    byId.get(id).push(layer);
+  }
+
+  const sectionHtml = sections.map((section, index) => {
+    const layers = (byId.get(section.id) || []).sort((a, b) => (Number(a.z) || 0) - (Number(b.z) || 0));
+    const items = [];
+    for (const layer of layers) {
+      const localY = (Number(layer.y) || 0) - (Number(section.y) || 0);
+      const style = layerCommonStyle(layer, localY);
+      if (layer.radius) style.push(`border-radius:${Number(layer.radius) || 0}px`);
+      if (layer.shadow) {
+        style.push(`box-shadow:${Number(layer.shadow.x) || 0}px ${Number(layer.shadow.y) || 0}px ${Number(layer.shadow.blur) || 0}px ${Number(layer.shadow.spread) || 0}px ${cssColor(layer.shadow.color)}`);
+      }
+
+      if (layer.kind === 'image' && layer.url) {
+        style.push(`object-fit:${layer.imageScaleMode === 'FIT' ? 'contain' : 'cover'}`, 'display:block');
+        items.push(`<img data-snapshot-layer="image" src="${escAttr(layer.url)}" style="${style.join(';')}">`);
+        continue;
+      }
+
+      if (layer.kind === 'svg' && layer.svg) {
+        const svg = String(layer.svg).replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<svg\b/i, '<svg style="width:100%;height:100%;display:block"');
+        items.push(`<div data-snapshot-layer="svg" style="${style.join(';')}">${svg}</div>`);
+        continue;
+      }
+
+      if (layer.kind === 'text') {
+        const c = layer.fill && layer.fill.kind === 'solid' ? cssColor(layer.fill.color) : 'rgba(0,0,0,1)';
+        style.push(
+          `color:${c}`,
+          `font-family:${escAttr(layer.fontFamily || 'Inter')}`,
+          `font-size:${Number(layer.fontSize) || 16}px`,
+          `font-weight:${Number(layer.fontWeight) || 400}`,
+          `line-height:${Number(layer.lineHeight) || (Number(layer.fontSize) || 16) * 1.2}px`,
+          `letter-spacing:${Number(layer.letterSpacing) || 0}px`,
+          `text-align:${String(layer.textAlign || 'LEFT').toLowerCase()}`,
+          'white-space:pre-wrap',
+          'overflow:hidden',
+          'margin:0',
+          'padding:0'
+        );
+        items.push(`<div data-snapshot-layer="text" style="${style.join(';')}">${escText(layer.text || '')}</div>`);
+        continue;
+      }
+
+      if (layer.fill) style.push(`background:${fillCss(layer.fill)}`);
+      if (layer.stroke && layer.strokeWeight) style.push(`border:${Number(layer.strokeWeight) || 1}px solid ${cssColor(layer.stroke)}`);
+      items.push(`<div data-snapshot-layer="shape" style="${style.join(';')}"></div>`);
+    }
+
+    return `<section id="snapshot-${index}" data-source-section="${escAttr(section.name || section.id)}" style="position:relative;width:${Number(snapshot.width) || 1440}px;height:${Math.max(1, Number(section.height) || 1)}px;overflow:hidden;margin:0;padding:0">${items.join('')}</section>`;
+  }).join('');
+
+  return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0!important;padding:0!important;width:${Number(snapshot.width) || 1440}px!important;min-width:${Number(snapshot.width) || 1440}px!important;background:#fff}main{margin:0;padding:0;width:100%}section{display:block}</style></head><body><main>${sectionHtml}</main></body></html>`;
 }
 
 async function renderSnapshot(startUrl, width) {
@@ -106,13 +191,7 @@ async function renderSnapshot(startUrl, width) {
     args: chromium.args,
     executablePath: await chromium.executablePath(),
     headless: 'shell',
-    defaultViewport: {
-      width,
-      height: VIEWPORT_HEIGHT,
-      deviceScaleFactor: 1,
-      isMobile: false,
-      hasTouch: false,
-    },
+    defaultViewport: { width, height: VIEWPORT_HEIGHT, deviceScaleFactor: 1, isMobile: false, hasTouch: false },
   });
 
   try {
@@ -135,11 +214,8 @@ async function renderSnapshot(startUrl, width) {
       try {
         await assertPublicUrl(target);
         const type = request.resourceType();
-        if (type === 'media' || type === 'websocket' || type === 'eventsource') {
-          await request.abort('blockedbyclient');
-        } else {
-          await request.continue();
-        }
+        if (type === 'media' || type === 'websocket' || type === 'eventsource') await request.abort('blockedbyclient');
+        else await request.continue();
       } catch {
         try { await request.abort('blockedbyclient'); } catch {}
       }
@@ -161,261 +237,147 @@ async function renderSnapshot(startUrl, width) {
       await sleep(450);
     }, MAX_PAGE_HEIGHT);
 
-    await page.addStyleTag({
-      content: '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}',
-    }).catch(() => {});
+    await page.addStyleTag({ content: '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}' }).catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     const finalUrl = page.url();
     await assertPublicUrl(finalUrl);
 
     const snapshot = await page.evaluate(({ maxLayers, maxHeight, viewportWidth }) => {
+      const layers = [];
       const win = window;
       const doc = document;
-      const layers = [];
       let truncated = false;
       let seq = 0;
 
-      function n(v, fallback = 0) {
-        const x = Number.parseFloat(v);
-        return Number.isFinite(x) ? x : fallback;
-      }
-      function round(v) { return Math.round(v * 100) / 100; }
-      function cleanText(v) {
-        return String(v || '').replace(/\u00a0/g, ' ').replace(/[\t\r\f\v ]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
-      }
-      function color(v) {
+      const num = (v, f = 0) => { const x = Number.parseFloat(v); return Number.isFinite(x) ? x : f; };
+      const round = (v) => Math.round(v * 100) / 100;
+      const clean = (v) => String(v || '').replace(/\u00a0/g, ' ').replace(/[\t\r\f\v ]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+      const parseColor = (v) => {
         const m = String(v || '').match(/rgba?\(([^)]+)\)/i);
         if (!m) return { r: 0, g: 0, b: 0, a: 0 };
         const p = m[1].split(',').map((x) => Number.parseFloat(x.trim()));
-        return {
-          r: Math.max(0, Math.min(1, (p[0] || 0) / 255)),
-          g: Math.max(0, Math.min(1, (p[1] || 0) / 255)),
-          b: Math.max(0, Math.min(1, (p[2] || 0) / 255)),
-          a: p.length > 3 && Number.isFinite(p[3]) ? Math.max(0, Math.min(1, p[3])) : 1,
-        };
-      }
-      function rectData(r) {
-        return { x: round(r.left + win.scrollX), y: round(r.top + win.scrollY), width: round(r.width), height: round(r.height) };
-      }
-      function visible(r, s) {
-        return r.width > 0.5 && r.height > 0.5 && s.display !== 'none' && s.visibility !== 'hidden' && n(s.opacity, 1) > 0.01;
-      }
-      function nameFor(e, suffix = '') {
-        const id = e.id ? '#' + e.id : '';
-        const cls = e.classList && e.classList.length ? '.' + Array.from(e.classList).slice(0, 2).join('.') : '';
-        return (e.tagName.toLowerCase() + id + cls + suffix).slice(0, 100);
-      }
-      function add(layer) {
+        return { r: (p[0] || 0) / 255, g: (p[1] || 0) / 255, b: (p[2] || 0) / 255, a: p.length > 3 && Number.isFinite(p[3]) ? p[3] : 1 };
+      };
+      const rect = (r) => ({ x: round(r.left + win.scrollX), y: round(r.top + win.scrollY), width: round(r.width), height: round(r.height) });
+      const visible = (r, s) => r.width > .5 && r.height > .5 && s.display !== 'none' && s.visibility !== 'hidden' && num(s.opacity, 1) > .01;
+      const name = (e, suffix = '') => ((e.tagName || 'node').toLowerCase() + (e.id ? '#' + e.id : '') + (e.classList && e.classList.length ? '.' + Array.from(e.classList).slice(0, 2).join('.') : '') + suffix).slice(0, 100);
+      const add = (layer) => {
         if (layers.length >= maxLayers) { truncated = true; return false; }
-        if (!layer || !Number.isFinite(layer.x) || !Number.isFinite(layer.y) || layer.width <= 0 || layer.height <= 0) return true;
+        if (!layer || !Number.isFinite(layer.x) || !Number.isFinite(layer.y) || layer.width <= .5 || layer.height <= .5) return true;
         if (layer.y > maxHeight + 1000 || layer.x > viewportWidth + 1000 || layer.x + layer.width < -1000) return true;
         layer.z = seq++;
         layers.push(layer);
         return true;
-      }
-      function firstUrl(value) {
-        const m = String(value || '').match(/url\((?:"|')?([^"')]+)(?:"|')?\)/i);
+      };
+      const firstUrl = (v) => {
+        const m = String(v || '').match(/url\((?:"|')?([^"')]+)(?:"|')?\)/i);
         if (!m || !m[1]) return '';
         try { return new URL(m[1], location.href).href; } catch { return m[1]; }
-      }
-      function parseLinearGradient(value) {
-        const raw = String(value || '');
+      };
+      const gradient = (v) => {
+        const raw = String(v || '');
         if (!raw.includes('linear-gradient(')) return null;
-        const colors = Array.from(raw.matchAll(/rgba?\([^)]*\)/gi)).map((m) => color(m[0]));
-        if (colors.length < 2) return null;
-        const angleMatch = raw.match(/linear-gradient\(\s*(-?[\d.]+)deg/i);
-        const angle = angleMatch ? n(angleMatch[1], 180) : 180;
-        return {
-          kind: 'linear',
-          angle,
-          stops: colors.slice(0, 8).map((c, i, a) => ({ position: a.length === 1 ? 0 : i / (a.length - 1), color: c })),
-        };
-      }
-      function parseShadow(value) {
-        const raw = String(value || '');
+        const cs = Array.from(raw.matchAll(/rgba?\([^)]*\)/gi)).map((m) => parseColor(m[0]));
+        if (cs.length < 2) return null;
+        const am = raw.match(/linear-gradient\(\s*(-?[\d.]+)deg/i);
+        return { kind: 'linear', angle: am ? num(am[1], 180) : 180, stops: cs.slice(0, 8).map((c, i, a) => ({ position: i / Math.max(1, a.length - 1), color: c })) };
+      };
+      const shadow = (v) => {
+        const raw = String(v || '');
         if (!raw || raw === 'none' || raw.includes('inset')) return null;
         const cm = raw.match(/rgba?\([^)]*\)/i);
-        const nums = raw.replace(cm ? cm[0] : '', '').match(/-?[\d.]+px/g) || [];
-        if (nums.length < 2) return null;
-        return {
-          color: color(cm ? cm[0] : 'rgba(0,0,0,.2)'),
-          x: n(nums[0]), y: n(nums[1]), blur: n(nums[2]), spread: n(nums[3]),
-        };
-      }
-      function radius(s) {
-        return Math.max(n(s.borderTopLeftRadius), n(s.borderTopRightRadius), n(s.borderBottomLeftRadius), n(s.borderBottomRightRadius));
-      }
-      function textAlign(v) {
-        const x = String(v || '').toLowerCase();
-        if (x === 'center') return 'CENTER';
-        if (x === 'right' || x === 'end') return 'RIGHT';
-        if (x === 'justify') return 'JUSTIFIED';
-        return 'LEFT';
-      }
-      function textRole(e, text) {
-        if (/^H[1-6]$/.test(e.tagName)) return e.tagName;
-        if (e.matches('button,.t-btn,[role="button"]')) return 'Button';
-        if (/^\s*\d{1,3}\s*$/.test(text)) return 'Number';
-        return 'Body';
-      }
-      function fontFamily(v) {
-        return String(v || 'Inter').split(',')[0].trim().replace(/^['"]|['"]$/g, '') || 'Inter';
-      }
-      function lineHeight(s) {
-        return s.lineHeight === 'normal' ? n(s.fontSize, 16) * 1.2 : n(s.lineHeight, n(s.fontSize, 16) * 1.2);
-      }
-      function ownOrInlineText(e) {
-        const inlineTags = new Set(['SPAN','STRONG','B','EM','I','U','SMALL','SUP','SUB','BR','MARK','CODE']);
-        const children = Array.from(e.children || []);
-        const onlyInline = children.every((c) => inlineTags.has(c.tagName));
-        const own = cleanText(Array.from(e.childNodes || []).filter((x) => x.nodeType === Node.TEXT_NODE).map((x) => x.textContent || '').join(' '));
+        const ns = raw.replace(cm ? cm[0] : '', '').match(/-?[\d.]+px/g) || [];
+        if (ns.length < 2) return null;
+        return { color: parseColor(cm ? cm[0] : 'rgba(0,0,0,.2)'), x: num(ns[0]), y: num(ns[1]), blur: num(ns[2]), spread: num(ns[3]) };
+      };
+      const radius = (s) => Math.max(num(s.borderTopLeftRadius), num(s.borderTopRightRadius), num(s.borderBottomLeftRadius), num(s.borderBottomRightRadius));
+      const textAlign = (v) => { const x = String(v || '').toLowerCase(); return x === 'center' ? 'CENTER' : (x === 'right' || x === 'end') ? 'RIGHT' : x === 'justify' ? 'JUSTIFIED' : 'LEFT'; };
+      const family = (v) => String(v || 'Inter').split(',')[0].trim().replace(/^['"]|['"]$/g, '') || 'Inter';
+      const lh = (s) => s.lineHeight === 'normal' ? num(s.fontSize, 16) * 1.2 : num(s.lineHeight, num(s.fontSize, 16) * 1.2);
+      const textRole = (e, t) => /^H[1-6]$/.test(e.tagName) ? e.tagName : e.matches('button,.t-btn,[role="button"]') ? 'Button' : /^\s*\d{1,3}\s*$/.test(t) ? 'Number' : 'Body';
+      const inlineTags = new Set(['SPAN','STRONG','B','EM','I','U','SMALL','SUP','SUB','BR','MARK','CODE']);
+      const ownText = (e) => {
+        const own = clean(Array.from(e.childNodes || []).filter((x) => x.nodeType === Node.TEXT_NODE).map((x) => x.textContent || '').join(' '));
         if (own) return own;
-        if (onlyInline) return cleanText(e.innerText || e.textContent || '');
+        if (Array.from(e.children || []).every((c) => inlineTags.has(c.tagName))) return clean(e.innerText || e.textContent || '');
         return '';
-      }
-      function textCandidate(e, text) {
-        if (!text) return false;
-        if (e.matches('.tn-atom,.t-title,.t-descr,.t-text,.t-name,.t-btn,.t-menu__link-item,h1,h2,h3,h4,h5,h6,p,button,label,li,blockquote')) return true;
-        if (e.tagName === 'A' && text.length < 220) return true;
-        if (['SPAN','STRONG','B','EM','I','SMALL'].includes(e.tagName) && text.length < 180) return true;
-        return false;
-      }
-      function meaningfulVisual(e, s, r) {
-        if (e === doc.body || e === doc.documentElement) return false;
-        if (r.width < 2 || r.height < 2) return false;
-        const bg = color(s.backgroundColor);
-        const borderWidth = Math.max(n(s.borderTopWidth), n(s.borderRightWidth), n(s.borderBottomWidth), n(s.borderLeftWidth));
-        const shadow = s.boxShadow && s.boxShadow !== 'none';
-        return bg.a > 0.01 || borderWidth > 0.1 || shadow;
-      }
+      };
+      const isText = (e, t) => !!t && (e.matches('.tn-atom,.t-title,.t-descr,.t-text,.t-name,.t-btn,.t-menu__link-item,h1,h2,h3,h4,h5,h6,p,button,label,li,blockquote') || (e.tagName === 'A' && t.length < 220) || (['SPAN','STRONG','B','EM','I','SMALL'].includes(e.tagName) && t.length < 180));
 
+      const candidates = Array.from(doc.querySelectorAll('#allrecords > .t-rec, .t-rec[id], header, main > section, footer'));
       const sectionElements = [];
-      const seenSections = new Set();
-      const tildaCandidates = doc.querySelectorAll('#allrecords > .t-rec, .t-rec[id], header, main > section, footer');
-      for (const el of tildaCandidates) {
-        if (seenSections.has(el)) continue;
-        const s = win.getComputedStyle(el);
-        const r = el.getBoundingClientRect();
+      const seen = new Set();
+      for (const e of candidates) {
+        if (seen.has(e)) continue;
+        const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
         if (!visible(r, s)) continue;
-        seenSections.add(el);
-        sectionElements.push(el);
+        seen.add(e); sectionElements.push(e);
       }
       if (!sectionElements.length && doc.body) {
-        for (const el of Array.from(doc.body.children)) {
-          const s = win.getComputedStyle(el);
-          const r = el.getBoundingClientRect();
-          if (visible(r, s)) sectionElements.push(el);
+        for (const e of Array.from(doc.body.children)) {
+          const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
+          if (visible(r, s)) sectionElements.push(e);
         }
       }
 
       const sectionMap = new Map();
-      const sections = sectionElements.map((el, i) => {
-        const r = el.getBoundingClientRect();
-        const id = 'section-' + i;
-        sectionMap.set(el, id);
-        return {
-          id,
-          name: (el.id || (el.classList && el.classList[0]) || el.tagName.toLowerCase()).slice(0, 90),
-          y: round(r.top + win.scrollY),
-          height: Math.max(1, round(r.height)),
-        };
+      const sections = sectionElements.map((e, i) => {
+        const r = e.getBoundingClientRect(), id = 'section-' + i;
+        sectionMap.set(e, id);
+        return { id, name: (e.id || (e.classList && e.classList[0]) || e.tagName.toLowerCase()).slice(0, 90), y: round(r.top + win.scrollY), height: Math.max(1, round(r.height)) };
       });
-
-      function sectionIdFor(e, r) {
+      const sectionFor = (e, r) => {
         const closest = e.closest ? e.closest('.t-rec,header,section,footer') : null;
         if (closest && sectionMap.has(closest)) return sectionMap.get(closest);
-        const y = r.top + win.scrollY + Math.min(10, r.height / 2);
-        for (const sec of sections) if (y >= sec.y - 2 && y <= sec.y + sec.height + 2) return sec.id;
-        if (sections.length) {
-          let best = sections[0];
-          let dist = Math.abs(y - best.y);
-          for (const sec of sections) {
-            const d = Math.abs(y - sec.y);
-            if (d < dist) { dist = d; best = sec; }
-          }
-          return best.id;
-        }
-        return undefined;
-      }
+        const y = r.top + win.scrollY + Math.min(8, r.height / 2);
+        const hit = sections.find((s) => y >= s.y - 2 && y <= s.y + s.height + 2);
+        return hit ? hit.id : (sections[0] ? sections[0].id : undefined);
+      };
 
       function walk(e, suppressText) {
         if (truncated || !(e instanceof HTMLElement || e instanceof SVGElement)) return;
-        const s = win.getComputedStyle(e);
-        const r = e.getBoundingClientRect();
+        const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
         if (!visible(r, s)) return;
-        const base = rectData(r);
-        const sectionId = sectionIdFor(e, r);
-        const opacity = n(s.opacity, 1);
-        const rad = radius(s);
+        const base = rect(r), sectionId = sectionFor(e, r), opacity = num(s.opacity, 1), rad = radius(s);
 
         if (e instanceof SVGElement && e.tagName.toLowerCase() === 'svg') {
-          add({ kind: 'svg', name: nameFor(e), ...base, opacity, svg: e.outerHTML.slice(0, 200000), sectionId });
+          add({ kind: 'svg', name: name(e), ...base, opacity, svg: e.outerHTML.slice(0, 180000), sectionId });
           return;
         }
-
         if (e.tagName === 'IMG') {
           const url = e.currentSrc || e.getAttribute('src') || e.getAttribute('data-original') || e.getAttribute('data-src') || '';
-          if (url) add({ kind: 'image', name: nameFor(e), ...base, opacity, url, radius: rad, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', sectionId });
+          if (url) add({ kind: 'image', name: name(e), ...base, opacity, url, radius: rad, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', sectionId });
           return;
         }
 
-        const bgImage = firstUrl(s.backgroundImage);
-        if (bgImage && base.width > 2 && base.height > 2) {
-          add({ kind: 'image', name: nameFor(e, ' — фон'), ...base, opacity, url: bgImage, radius: rad, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', sectionId });
-        } else {
-          const gradient = parseLinearGradient(s.backgroundImage);
-          const bg = color(s.backgroundColor);
-          const borderWidth = Math.max(n(s.borderTopWidth), n(s.borderRightWidth), n(s.borderBottomWidth), n(s.borderLeftWidth));
-          const border = borderWidth > 0.1 ? color(s.borderTopColor) : null;
-          const shadow = parseShadow(s.boxShadow);
-          if (meaningfulVisual(e, s, r)) {
-            add({
-              kind: 'shape', name: nameFor(e, ' — фон'), ...base, opacity,
-              fill: gradient || (bg.a > 0.01 ? { kind: 'solid', color: bg } : undefined),
-              stroke: border || undefined, strokeWeight: borderWidth || undefined,
-              radius: rad || undefined, shadow: shadow || undefined, sectionId,
-            });
+        const bgUrl = firstUrl(s.backgroundImage);
+        if (bgUrl) add({ kind: 'image', name: name(e, ' — фон'), ...base, opacity, url: bgUrl, radius: rad, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', sectionId });
+        else {
+          const bg = parseColor(s.backgroundColor), borderWidth = Math.max(num(s.borderTopWidth), num(s.borderRightWidth), num(s.borderBottomWidth), num(s.borderLeftWidth)), sh = shadow(s.boxShadow), gr = gradient(s.backgroundImage);
+          if (e !== doc.body && e !== doc.documentElement && (bg.a > .01 || borderWidth > .1 || sh || gr)) {
+            add({ kind: 'shape', name: name(e, ' — фон'), ...base, opacity, fill: gr || (bg.a > .01 ? { kind: 'solid', color: bg } : undefined), stroke: borderWidth > .1 ? parseColor(s.borderTopColor) : undefined, strokeWeight: borderWidth || undefined, radius: rad || undefined, shadow: sh || undefined, sectionId });
           }
         }
 
-        let capturedText = false;
+        let captured = false;
         if (!suppressText) {
-          const text = ownOrInlineText(e);
-          if (textCandidate(e, text)) {
-            const fill = color(s.color);
-            add({
-              kind: 'text', name: nameFor(e, ' — текст'), ...base, opacity,
-              fill: { kind: 'solid', color: fill }, text,
-              textRole: textRole(e, text), fontSize: n(s.fontSize, 16),
-              fontWeight: n(s.fontWeight, 400), fontFamily: fontFamily(s.fontFamily),
-              lineHeight: lineHeight(s), letterSpacing: s.letterSpacing === 'normal' ? 0 : n(s.letterSpacing, 0),
-              textAlign: textAlign(s.textAlign), textSizing: 'FIXED', sectionId,
-            });
-            capturedText = true;
+          const t = ownText(e);
+          if (isText(e, t)) {
+            add({ kind: 'text', name: name(e, ' — текст'), ...base, opacity, fill: { kind: 'solid', color: parseColor(s.color) }, text: t, textRole: textRole(e, t), fontSize: num(s.fontSize, 16), fontWeight: num(s.fontWeight, 400), fontFamily: family(s.fontFamily), lineHeight: lh(s), letterSpacing: s.letterSpacing === 'normal' ? 0 : num(s.letterSpacing), textAlign: textAlign(s.textAlign), textSizing: 'FIXED', sectionId });
+            captured = true;
           }
         }
-
-        for (const child of Array.from(e.children || [])) walk(child, suppressText || capturedText);
+        for (const child of Array.from(e.children || [])) walk(child, suppressText || captured);
       }
 
       if (doc.body) walk(doc.body, false);
-
       const root = doc.scrollingElement || doc.documentElement;
-      const pageHeight = Math.min(maxHeight, Math.max(root.scrollHeight, doc.body ? doc.body.scrollHeight : 0, 1));
-      return { width: viewportWidth, height: pageHeight, layers, sections, truncated };
+      const height = Math.min(maxHeight, Math.max(root.scrollHeight, doc.body ? doc.body.scrollHeight : 0, 1));
+      return { width: viewportWidth, height, sections, layers, truncated };
     }, { maxLayers: MAX_LAYERS, maxHeight: MAX_PAGE_HEIGHT, viewportWidth: width });
 
-    return {
-      finalUrl,
-      snapshot,
-      stats: {
-        layers: snapshot.layers.length,
-        sections: snapshot.sections.length,
-        height: snapshot.height,
-        truncated: snapshot.truncated,
-      },
-    };
+    return { finalUrl, snapshot };
   } finally {
     await browser.close().catch(() => {});
   }
@@ -423,30 +385,27 @@ async function renderSnapshot(startUrl, width) {
 
 module.exports = async function handler(req, res) {
   setCors(res);
-
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return;
-  }
-  if (req.method !== 'GET') {
-    res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
-    return;
-  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
 
   const rawUrl = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
   const rawWidth = Array.isArray(req.query.width) ? req.query.width[0] : req.query.width;
-  const width = Math.max(320, Math.min(1920, Number(rawWidth) || VIEWPORT_WIDTH));
-
-  if (!rawUrl) {
-    res.status(400).json({ ok: false, error: 'Не передан параметр url' });
-    return;
-  }
+  const width = Math.max(320, Math.min(1920, Number(rawWidth) || 1440));
+  if (!rawUrl) return res.status(400).json({ ok: false, error: 'Не передан параметр url' });
 
   try {
-    const result = await renderSnapshot(String(rawUrl), width);
-    res.status(200).json({ ok: true, mode: 'rendered-snapshot', ...result });
+    const { finalUrl, snapshot } = await renderSnapshot(String(rawUrl), width);
+    const html = snapshotToHtml(snapshot);
+    if (html.length > 2900000) throw new Error('Отрендерированный снимок страницы превышает лимит 2.9 МБ');
+    return res.status(200).json({
+      ok: true,
+      mode: 'browser-static-html',
+      finalUrl,
+      html,
+      stats: { layers: snapshot.layers.length, sections: snapshot.sections.length, height: snapshot.height, truncated: snapshot.truncated },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не удалось отрендерить страницу';
-    res.status(502).json({ ok: false, error: message });
+    return res.status(502).json({ ok: false, error: message });
   }
 };
