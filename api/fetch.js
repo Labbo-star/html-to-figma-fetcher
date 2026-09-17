@@ -1,5 +1,4 @@
-from pathlib import Path
-code = r"""const dns = require('node:dns').promises;
+const dns = require('node:dns').promises;
 const net = require('node:net');
 
 const MAX_BYTES = 3 * 1024 * 1024;
@@ -36,7 +35,6 @@ function isPrivateIPv6(ip) {
   if (value === '::' || value === '::1') return true;
   if (value.startsWith('fc') || value.startsWith('fd')) return true;
   if (/^fe[89ab]/.test(value)) return true;
-
   if (value.startsWith('::ffff:')) {
     const v4 = value.slice(7);
     if (net.isIP(v4) === 4) return isPrivateIPv4(v4);
@@ -62,13 +60,11 @@ async function assertPublicUrl(rawUrl) {
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new Error('Разрешены только http/https ссылки');
   }
-
   if (url.username || url.password) {
     throw new Error('URL с логином/паролем не поддерживаются');
   }
 
   const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-
   if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost')) {
     throw new Error('Локальные адреса запрещены');
   }
@@ -82,18 +78,14 @@ async function assertPublicUrl(rawUrl) {
     dns.resolve4(hostname).catch(() => []),
     dns.resolve6(hostname).catch(() => []),
   ]);
-
   const addresses = [...v4, ...v6];
-
   if (!addresses.length) throw new Error('Домен не найден');
   if (addresses.some(isPrivateIp)) throw new Error('Сайт ведёт на приватный IP-адрес');
-
   return url;
 }
 
 async function readBodyLimited(response) {
   if (!response.body) return '';
-
   const reader = response.body.getReader();
   const chunks = [];
   let total = 0;
@@ -101,25 +93,20 @@ async function readBodyLimited(response) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     total += value.byteLength;
-
     if (total > MAX_BYTES) {
       try { await reader.cancel(); } catch {}
       throw new Error('HTML страницы превышает лимит 3 МБ');
     }
-
     chunks.push(value);
   }
 
   const merged = new Uint8Array(total);
   let offset = 0;
-
   for (const chunk of chunks) {
     merged.set(chunk, offset);
     offset += chunk.byteLength;
   }
-
   return new TextDecoder('utf-8').decode(merged);
 }
 
@@ -129,7 +116,6 @@ async function fetchHtml(startUrl) {
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
     let response;
 
     try {
@@ -144,9 +130,7 @@ async function fetchHtml(startUrl) {
         },
       });
     } catch (error) {
-      if (error && error.name === 'AbortError') {
-        throw new Error('Сайт не ответил за 15 секунд');
-      }
+      if (error && error.name === 'AbortError') throw new Error('Сайт не ответил за 15 секунд');
       throw new Error('Не удалось загрузить страницу');
     } finally {
       clearTimeout(timer);
@@ -154,44 +138,24 @@ async function fetchHtml(startUrl) {
 
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get('location');
-
-      if (!location) {
-        throw new Error('Сайт вернул редирект без адреса');
-      }
-
-      if (redirectCount === MAX_REDIRECTS) {
-        throw new Error('Слишком много перенаправлений');
-      }
-
+      if (!location) throw new Error('Сайт вернул редирект без адреса');
+      if (redirectCount === MAX_REDIRECTS) throw new Error('Слишком много перенаправлений');
       current = await assertPublicUrl(new URL(location, current).href);
       continue;
     }
 
-    if (!response.ok) {
-      throw new Error(`Сайт вернул HTTP ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Сайт вернул HTTP ${response.status}`);
 
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
-
-    if (
-      contentType &&
-      !contentType.includes('text/html') &&
-      !contentType.includes('application/xhtml+xml')
-    ) {
+    if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
       throw new Error(`Ожидался HTML, получено: ${contentType.split(';')[0]}`);
     }
 
     const declaredLength = Number(response.headers.get('content-length') || 0);
-
-    if (declaredLength > MAX_BYTES) {
-      throw new Error('HTML страницы превышает лимит 3 МБ');
-    }
+    if (declaredLength > MAX_BYTES) throw new Error('HTML страницы превышает лимит 3 МБ');
 
     const html = await readBodyLimited(response);
-
-    if (!html.trim()) {
-      throw new Error('Сайт вернул пустую страницу');
-    }
+    if (!html.trim()) throw new Error('Сайт вернул пустую страницу');
 
     return {
       html,
@@ -212,41 +176,21 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method !== 'GET') {
-    res.status(405).json({
-      ok: false,
-      error: 'Разрешены только GET и OPTIONS',
-    });
+    res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
     return;
   }
 
   const rawUrl = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
-
   if (!rawUrl) {
-    res.status(400).json({
-      ok: false,
-      error: 'Не передан параметр url',
-    });
+    res.status(400).json({ ok: false, error: 'Не передан параметр url' });
     return;
   }
 
   try {
     const result = await fetchHtml(String(rawUrl));
-
-    res.status(200).json({
-      ok: true,
-      ...result,
-    });
+    res.status(200).json({ ok: true, ...result });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Не удалось загрузить страницу';
-
-    res.status(502).json({
-      ok: false,
-      error: message,
-    });
+    const message = error instanceof Error ? error.message : 'Не удалось загрузить страницу';
+    res.status(502).json({ ok: false, error: message });
   }
 };
-"""
-path = Path('/mnt/data/fetch.js')
-path.write_text(code, encoding='utf-8')
-print(path)
