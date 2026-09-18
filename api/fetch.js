@@ -6,14 +6,15 @@ function setCors(res) {
   res.setHeader('Cache-Control', 'no-store');
 }
 
-function proxyImage(url, origin) {
+function proxyImage(url, origin, referer) {
   const raw = String(url || '');
   if (!raw || /^data:/i.test(raw) || /^blob:/i.test(raw)) return raw;
   if (raw.startsWith(`${origin}/api/image?url=`)) return raw;
-  return `${origin}/api/image?url=${encodeURIComponent(raw)}`;
+  const ref = referer ? `&ref=${encodeURIComponent(referer)}` : '';
+  return `${origin}/api/image?url=${encodeURIComponent(raw)}${ref}`;
 }
 
-function proxySnapshot(snapshot, origin) {
+function proxySnapshot(snapshot, origin, referer) {
   return {
     ...snapshot,
     sections: Array.isArray(snapshot.sections) ? snapshot.sections : [],
@@ -23,7 +24,7 @@ function proxySnapshot(snapshot, origin) {
           return {
             ...layer,
             sourceUrl: layer.sourceUrl || layer.url,
-            url: proxyImage(layer.url, origin),
+            url: proxyImage(layer.url, origin, referer),
           };
         })
       : [],
@@ -41,37 +42,31 @@ module.exports = async function handler(req, res) {
   if (!rawUrl) return res.status(400).json({ ok: false, error: 'Не передан параметр url' });
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 55000);
+  const timer = setTimeout(() => controller.abort(), 58000);
 
   try {
     const origin = `https://${req.headers.host || 'html-to-figma-fetcher-v2.vercel.app'}`;
-    const endpoint = `${origin}/api/render5?url=${encodeURIComponent(String(rawUrl))}&width=${encodeURIComponent(String(width))}`;
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      cache: 'no-store',
-      signal: controller.signal,
-    });
+    const endpoint = `${origin}/api/render6?url=${encodeURIComponent(String(rawUrl))}&width=${encodeURIComponent(String(width))}`;
+    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store', signal: controller.signal });
     const text = await response.text();
     let data = null;
     try { data = JSON.parse(text); } catch {}
 
     if (!response.ok || !data || data.ok === false) {
-      const message = data && (data.error || data.message)
-        ? String(data.error || data.message)
-        : `HTTP ${response.status}`;
+      const message = data && (data.error || data.message) ? String(data.error || data.message) : `HTTP ${response.status}`;
       return res.status(502).json({ ok: false, error: `Серверный Chromium: ${message}` });
     }
     if (!data.snapshot || !Array.isArray(data.snapshot.layers)) {
       return res.status(502).json({ ok: false, error: 'Серверный Chromium не вернул снимок страницы' });
     }
 
-    const snapshot = proxySnapshot(data.snapshot, origin);
+    const referer = data.finalUrl || String(rawUrl);
+    const snapshot = proxySnapshot(data.snapshot, origin, referer);
     return res.status(200).json({
       ok: true,
-      mode: data.mode || 'browser-snapshot-v6-fidelity',
-      finalUrl: data.finalUrl || String(rawUrl),
+      mode: data.mode || 'browser-snapshot-v7-fidelity',
+      finalUrl: referer,
       snapshot,
-      diagnostics: data.diagnostics || null,
       stats: data.stats || {
         layers: snapshot.layers.length,
         sections: snapshot.sections.length,
@@ -81,7 +76,7 @@ module.exports = async function handler(req, res) {
     });
   } catch (error) {
     const message = error && error.name === 'AbortError'
-      ? 'Серверный Chromium не успел завершить рендер за 55 секунд'
+      ? 'Серверный Chromium не успел завершить рендер за 58 секунд'
       : (error && error.message ? error.message : 'Не удалось вызвать серверный Chromium');
     return res.status(502).json({ ok: false, error: message });
   } finally {
