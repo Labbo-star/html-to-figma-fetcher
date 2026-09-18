@@ -77,8 +77,10 @@ async function renderPage(rawUrl, width) {
   let puppeteer;
   let chromium;
   try {
-    puppeteer = require('puppeteer-core');
-    chromium = require('@sparticuz/chromium');
+    const puppeteerModule = await import('puppeteer-core');
+    const chromiumModule = await import('@sparticuz/chromium');
+    puppeteer = puppeteerModule.default || puppeteerModule;
+    chromium = chromiumModule.default || chromiumModule;
   } catch (error) {
     throw new Error(`Не удалось загрузить Chromium-модули: ${error && error.message ? error.message : error}`);
   }
@@ -300,7 +302,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
 
   if (String(req.query.ping || '') === '1') {
-    return res.status(200).json({ ok: true, service: 'browser-renderer', version: 1 });
+    return res.status(200).json({ ok: true, service: 'browser-renderer', version: 2 });
   }
 
   const rawUrl = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
