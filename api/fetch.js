@@ -6,7 +6,8 @@ const chromium = require('@sparticuz/chromium');
 const MAX_LAYERS = 2200;
 const MAX_PAGE_HEIGHT = 30000;
 const VIEWPORT_HEIGHT = 1000;
-const NAV_TIMEOUT_MS = 25000;
+const NAV_TIMEOUT_MS = 12000;
+const DNS_TIMEOUT_MS = 1200;
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -41,8 +42,17 @@ function isPrivateIPv6(ip) {
 }
 
 function isPrivateIp(ip) {
-  const type = net.isIP(ip);
-  return type === 4 ? isPrivateIPv4(ip) : type === 6 ? isPrivateIPv6(ip) : true;
+  const kind = net.isIP(ip);
+  if (kind === 4) return isPrivateIPv4(ip);
+  if (kind === 6) return isPrivateIPv6(ip);
+  return true;
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
 }
 
 const hostSafetyCache = new Map();
@@ -56,12 +66,10 @@ async function assertPublicUrl(rawUrl) {
   if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
     throw new Error('Локальные адреса запрещены');
   }
-
   if (hostSafetyCache.has(hostname)) {
     if (!hostSafetyCache.get(hostname)) throw new Error('Приватный адрес запрещён');
     return url;
   }
-
   if (net.isIP(hostname)) {
     const safe = !isPrivateIp(hostname);
     hostSafetyCache.set(hostname, safe);
@@ -69,11 +77,16 @@ async function assertPublicUrl(rawUrl) {
     return url;
   }
 
-  const [v4, v6] = await Promise.all([
-    dns.resolve4(hostname).catch(() => []),
-    dns.resolve6(hostname).catch(() => []),
-  ]);
-  const addresses = [...v4, ...v6];
+  let addresses = [];
+  try {
+    const [v4, v6] = await withTimeout(Promise.all([
+      dns.resolve4(hostname).catch(() => []),
+      dns.resolve6(hostname).catch(() => []),
+    ]), DNS_TIMEOUT_MS);
+    addresses = [...v4, ...v6];
+  } catch {
+    throw new Error('Не удалось проверить адрес сайта');
+  }
   if (!addresses.length) throw new Error('Домен не найден');
   const safe = !addresses.some(isPrivateIp);
   hostSafetyCache.set(hostname, safe);
@@ -84,9 +97,7 @@ async function assertPublicUrl(rawUrl) {
 function escText(value) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-function escAttr(value) {
-  return escText(value).replace(/"/g, '&quot;');
-}
+function escAttr(value) { return escText(value).replace(/"/g, '&quot;'); }
 function channel(v) { return Math.max(0, Math.min(255, Math.round((Number(v) || 0) * 255))); }
 function alpha(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
 function cssColor(c) {
@@ -102,24 +113,12 @@ function fillCss(fill) {
   }
   return 'transparent';
 }
-function layerCommonStyle(layer, localY) {
-  return [
-    'position:absolute',
-    `left:${Number(layer.x) || 0}px`,
-    `top:${Number(localY) || 0}px`,
-    `width:${Math.max(1, Number(layer.width) || 1)}px`,
-    `height:${Math.max(1, Number(layer.height) || 1)}px`,
-    `opacity:${Math.max(0.01, Math.min(1, Number(layer.opacity) || 1))}`,
-    `z-index:${Number(layer.z) || 0}`,
-    'box-sizing:border-box',
-  ];
-}
+
 function snapshotToHtml(snapshot) {
   const sections = Array.isArray(snapshot.sections) && snapshot.sections.length
     ? snapshot.sections.slice().sort((a, b) => a.y - b.y)
     : [{ id: 'section-0', name: 'page', y: 0, height: snapshot.height || 1 }];
   const byId = new Map(sections.map((s) => [s.id, []]));
-
   for (const layer of snapshot.layers || []) {
     let id = layer.sectionId;
     if (!byId.has(id)) {
@@ -132,27 +131,29 @@ function snapshotToHtml(snapshot) {
 
   const sectionHtml = sections.map((section, index) => {
     const layers = (byId.get(section.id) || []).sort((a, b) => (Number(a.z) || 0) - (Number(b.z) || 0));
-    const items = [];
-    for (const layer of layers) {
+    const items = layers.map((layer) => {
       const localY = (Number(layer.y) || 0) - (Number(section.y) || 0);
-      const style = layerCommonStyle(layer, localY);
+      const style = [
+        'position:absolute',
+        `left:${Number(layer.x) || 0}px`,
+        `top:${Number(localY) || 0}px`,
+        `width:${Math.max(1, Number(layer.width) || 1)}px`,
+        `height:${Math.max(1, Number(layer.height) || 1)}px`,
+        `opacity:${Math.max(0.01, Math.min(1, Number(layer.opacity) || 1))}`,
+        `z-index:${Number(layer.z) || 0}`,
+        'box-sizing:border-box',
+      ];
       if (layer.radius) style.push(`border-radius:${Number(layer.radius) || 0}px`);
-      if (layer.shadow) {
-        style.push(`box-shadow:${Number(layer.shadow.x) || 0}px ${Number(layer.shadow.y) || 0}px ${Number(layer.shadow.blur) || 0}px ${Number(layer.shadow.spread) || 0}px ${cssColor(layer.shadow.color)}`);
-      }
+      if (layer.shadow) style.push(`box-shadow:${Number(layer.shadow.x) || 0}px ${Number(layer.shadow.y) || 0}px ${Number(layer.shadow.blur) || 0}px ${Number(layer.shadow.spread) || 0}px ${cssColor(layer.shadow.color)}`);
 
       if (layer.kind === 'image' && layer.url) {
         style.push(`object-fit:${layer.imageScaleMode === 'FIT' ? 'contain' : 'cover'}`, 'display:block');
-        items.push(`<img data-snapshot-layer="image" src="${escAttr(layer.url)}" style="${style.join(';')}">`);
-        continue;
+        return `<img data-snapshot-layer="image" src="${escAttr(layer.url)}" style="${style.join(';')}">`;
       }
-
       if (layer.kind === 'svg' && layer.svg) {
         const svg = String(layer.svg).replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<svg\b/i, '<svg style="width:100%;height:100%;display:block"');
-        items.push(`<div data-snapshot-layer="svg" style="${style.join(';')}">${svg}</div>`);
-        continue;
+        return `<div data-snapshot-layer="svg" style="${style.join(';')}">${svg}</div>`;
       }
-
       if (layer.kind === 'text') {
         const c = layer.fill && layer.fill.kind === 'solid' ? cssColor(layer.fill.color) : 'rgba(0,0,0,1)';
         style.push(
@@ -163,21 +164,16 @@ function snapshotToHtml(snapshot) {
           `line-height:${Number(layer.lineHeight) || (Number(layer.fontSize) || 16) * 1.2}px`,
           `letter-spacing:${Number(layer.letterSpacing) || 0}px`,
           `text-align:${String(layer.textAlign || 'LEFT').toLowerCase()}`,
-          'white-space:pre-wrap',
-          'overflow:hidden',
-          'margin:0',
-          'padding:0'
+          'white-space:pre-wrap', 'overflow:hidden', 'margin:0', 'padding:0'
         );
-        items.push(`<div data-snapshot-layer="text" style="${style.join(';')}">${escText(layer.text || '')}</div>`);
-        continue;
+        return `<div data-snapshot-layer="text" style="${style.join(';')}">${escText(layer.text || '')}</div>`;
       }
-
       if (layer.fill) style.push(`background:${fillCss(layer.fill)}`);
       if (layer.stroke && layer.strokeWeight) style.push(`border:${Number(layer.strokeWeight) || 1}px solid ${cssColor(layer.stroke)}`);
-      items.push(`<div data-snapshot-layer="shape" style="${style.join(';')}"></div>`);
-    }
+      return `<div data-snapshot-layer="shape" style="${style.join(';')}"></div>`;
+    }).join('');
 
-    return `<section id="snapshot-${index}" data-source-section="${escAttr(section.name || section.id)}" style="position:relative;width:${Number(snapshot.width) || 1440}px;height:${Math.max(1, Number(section.height) || 1)}px;overflow:hidden;margin:0;padding:0">${items.join('')}</section>`;
+    return `<section data-source-section="${escAttr(section.name || section.id)}" style="position:relative;width:${Number(snapshot.width) || 1440}px;height:${Math.max(1, Number(section.height) || 1)}px;overflow:hidden;margin:0;padding:0">${items}</section>`;
   }).join('');
 
   return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0!important;padding:0!important;width:${Number(snapshot.width) || 1440}px!important;min-width:${Number(snapshot.width) || 1440}px!important;background:#fff}main{margin:0;padding:0;width:100%}section{display:block}</style></head><body><main>${sectionHtml}</main></body></html>`;
@@ -186,7 +182,6 @@ function snapshotToHtml(snapshot) {
 async function renderSnapshot(startUrl, width) {
   const safeStart = await assertPublicUrl(startUrl);
   chromium.setGraphicsMode = false;
-
   const browser = await puppeteer.launch({
     args: chromium.args,
     executablePath: await chromium.executablePath(),
@@ -212,33 +207,42 @@ async function renderSnapshot(startUrl, width) {
         return;
       }
       try {
-        await assertPublicUrl(target);
         const type = request.resourceType();
-        if (type === 'media' || type === 'websocket' || type === 'eventsource') await request.abort('blockedbyclient');
-        else await request.continue();
+        if (type === 'media' || type === 'websocket' || type === 'eventsource') {
+          await request.abort('blockedbyclient');
+          return;
+        }
+        await assertPublicUrl(target);
+        await request.continue();
       } catch {
         try { await request.abort('blockedbyclient'); } catch {}
       }
     });
 
     await page.goto(safeStart.href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
-    try { await page.waitForNetworkIdle({ idleTime: 500, timeout: 7000 }); } catch {}
-    try { await page.evaluate(() => document.fonts && document.fonts.ready); } catch {}
+    await Promise.race([
+      page.waitForNetworkIdle({ idleTime: 300, timeout: 1600 }).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 1700)),
+    ]);
+    await Promise.race([
+      page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
 
     await page.evaluate(async (maxHeight) => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const root = document.scrollingElement || document.documentElement;
       const total = Math.min(maxHeight, Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0));
-      for (let y = 0; y < total; y += 700) {
+      for (let y = 0; y < total; y += 1400) {
         window.scrollTo(0, y);
-        await sleep(60);
+        await sleep(22);
       }
       window.scrollTo(0, 0);
-      await sleep(450);
+      await sleep(220);
     }, MAX_PAGE_HEIGHT);
 
     await page.addStyleTag({ content: '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}' }).catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 120));
 
     const finalUrl = page.url();
     await assertPublicUrl(finalUrl);
@@ -249,7 +253,6 @@ async function renderSnapshot(startUrl, width) {
       const doc = document;
       let truncated = false;
       let seq = 0;
-
       const num = (v, f = 0) => { const x = Number.parseFloat(v); return Number.isFinite(x) ? x : f; };
       const round = (v) => Math.round(v * 100) / 100;
       const clean = (v) => String(v || '').replace(/\u00a0/g, ' ').replace(/[\t\r\f\v ]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
@@ -294,7 +297,7 @@ async function renderSnapshot(startUrl, width) {
       const radius = (s) => Math.max(num(s.borderTopLeftRadius), num(s.borderTopRightRadius), num(s.borderBottomLeftRadius), num(s.borderBottomRightRadius));
       const textAlign = (v) => { const x = String(v || '').toLowerCase(); return x === 'center' ? 'CENTER' : (x === 'right' || x === 'end') ? 'RIGHT' : x === 'justify' ? 'JUSTIFIED' : 'LEFT'; };
       const family = (v) => String(v || 'Inter').split(',')[0].trim().replace(/^['"]|['"]$/g, '') || 'Inter';
-      const lh = (s) => s.lineHeight === 'normal' ? num(s.fontSize, 16) * 1.2 : num(s.lineHeight, num(s.fontSize, 16) * 1.2);
+      const lineHeight = (s) => s.lineHeight === 'normal' ? num(s.fontSize, 16) * 1.2 : num(s.lineHeight, num(s.fontSize, 16) * 1.2);
       const textRole = (e, t) => /^H[1-6]$/.test(e.tagName) ? e.tagName : e.matches('button,.t-btn,[role="button"]') ? 'Button' : /^\s*\d{1,3}\s*$/.test(t) ? 'Number' : 'Body';
       const inlineTags = new Set(['SPAN','STRONG','B','EM','I','U','SMALL','SUP','SUB','BR','MARK','CODE']);
       const ownText = (e) => {
@@ -320,7 +323,6 @@ async function renderSnapshot(startUrl, width) {
           if (visible(r, s)) sectionElements.push(e);
         }
       }
-
       const sectionMap = new Map();
       const sections = sectionElements.map((e, i) => {
         const r = e.getBoundingClientRect(), id = 'section-' + i;
@@ -340,7 +342,6 @@ async function renderSnapshot(startUrl, width) {
         const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
         if (!visible(r, s)) return;
         const base = rect(r), sectionId = sectionFor(e, r), opacity = num(s.opacity, 1), rad = radius(s);
-
         if (e instanceof SVGElement && e.tagName.toLowerCase() === 'svg') {
           add({ kind: 'svg', name: name(e), ...base, opacity, svg: e.outerHTML.slice(0, 180000), sectionId });
           return;
@@ -350,7 +351,6 @@ async function renderSnapshot(startUrl, width) {
           if (url) add({ kind: 'image', name: name(e), ...base, opacity, url, radius: rad, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', sectionId });
           return;
         }
-
         const bgUrl = firstUrl(s.backgroundImage);
         if (bgUrl) add({ kind: 'image', name: name(e, ' — фон'), ...base, opacity, url: bgUrl, radius: rad, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', sectionId });
         else {
@@ -359,12 +359,11 @@ async function renderSnapshot(startUrl, width) {
             add({ kind: 'shape', name: name(e, ' — фон'), ...base, opacity, fill: gr || (bg.a > .01 ? { kind: 'solid', color: bg } : undefined), stroke: borderWidth > .1 ? parseColor(s.borderTopColor) : undefined, strokeWeight: borderWidth || undefined, radius: rad || undefined, shadow: sh || undefined, sectionId });
           }
         }
-
         let captured = false;
         if (!suppressText) {
           const t = ownText(e);
           if (isText(e, t)) {
-            add({ kind: 'text', name: name(e, ' — текст'), ...base, opacity, fill: { kind: 'solid', color: parseColor(s.color) }, text: t, textRole: textRole(e, t), fontSize: num(s.fontSize, 16), fontWeight: num(s.fontWeight, 400), fontFamily: family(s.fontFamily), lineHeight: lh(s), letterSpacing: s.letterSpacing === 'normal' ? 0 : num(s.letterSpacing), textAlign: textAlign(s.textAlign), textSizing: 'FIXED', sectionId });
+            add({ kind: 'text', name: name(e, ' — текст'), ...base, opacity, fill: { kind: 'solid', color: parseColor(s.color) }, text: t, textRole: textRole(e, t), fontSize: num(s.fontSize, 16), fontWeight: num(s.fontWeight, 400), fontFamily: family(s.fontFamily), lineHeight: lineHeight(s), letterSpacing: s.letterSpacing === 'normal' ? 0 : num(s.letterSpacing), textAlign: textAlign(s.textAlign), textSizing: 'FIXED', sectionId });
             captured = true;
           }
         }
