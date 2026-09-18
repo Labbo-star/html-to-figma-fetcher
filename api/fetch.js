@@ -9,9 +9,9 @@ function setCors(res) {
 function proxyImage(url, origin, referer) {
   const raw = String(url || '');
   if (!raw || /^data:/i.test(raw) || /^blob:/i.test(raw)) return raw;
-  if (raw.startsWith(`${origin}/api/image?url=`)) return raw;
+  if (raw.startsWith(`${origin}/api/image2?url=`)) return raw;
   const ref = referer ? `&ref=${encodeURIComponent(referer)}` : '';
-  return `${origin}/api/image?url=${encodeURIComponent(raw)}${ref}`;
+  return `${origin}/api/image2?url=${encodeURIComponent(raw)}${ref}`;
 }
 
 function proxySnapshot(snapshot, origin, referer) {
@@ -31,10 +31,25 @@ function proxySnapshot(snapshot, origin, referer) {
   };
 }
 
+async function callRenderer(origin, path, rawUrl, width, signal) {
+  const endpoint = `${origin}${path}?url=${encodeURIComponent(String(rawUrl))}&width=${encodeURIComponent(String(width))}`;
+  const response = await fetch(endpoint, { method: 'GET', cache: 'no-store', signal });
+  const text = await response.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch {}
+  if (!response.ok || !data || data.ok === false) {
+    const message = data && (data.error || data.message) ? String(data.error || data.message) : `HTTP ${response.status}`;
+    throw new Error(`${path}: ${message}`);
+  }
+  if (!data.snapshot || !Array.isArray(data.snapshot.layers)) throw new Error(`${path}: сервер не вернул снимок страницы`);
+  return data;
+}
+
 module.exports = async function handler(req, res) {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
+  if (String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'compat-fetcher', version: 8 });
 
   const rawUrl = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
   const rawWidth = Array.isArray(req.query.width) ? req.query.width[0] : req.query.width;
@@ -43,30 +58,28 @@ module.exports = async function handler(req, res) {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 58000);
-
   try {
     const origin = `https://${req.headers.host || 'html-to-figma-fetcher-v2.vercel.app'}`;
-    const endpoint = `${origin}/api/render6?url=${encodeURIComponent(String(rawUrl))}&width=${encodeURIComponent(String(width))}`;
-    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store', signal: controller.signal });
-    const text = await response.text();
-    let data = null;
-    try { data = JSON.parse(text); } catch {}
-
-    if (!response.ok || !data || data.ok === false) {
-      const message = data && (data.error || data.message) ? String(data.error || data.message) : `HTTP ${response.status}`;
-      return res.status(502).json({ ok: false, error: `Серверный Chromium: ${message}` });
-    }
-    if (!data.snapshot || !Array.isArray(data.snapshot.layers)) {
-      return res.status(502).json({ ok: false, error: 'Серверный Chromium не вернул снимок страницы' });
+    let data;
+    let primaryError = '';
+    try {
+      data = await callRenderer(origin, '/api/render7', rawUrl, width, controller.signal);
+    } catch (error) {
+      primaryError = error && error.message ? error.message : String(error);
+      data = await callRenderer(origin, '/api/render5', rawUrl, width, controller.signal);
+      data.fallbackRenderer = 'render5';
+      data.primaryRendererError = primaryError;
     }
 
     const referer = data.finalUrl || String(rawUrl);
     const snapshot = proxySnapshot(data.snapshot, origin, referer);
     return res.status(200).json({
       ok: true,
-      mode: data.mode || 'browser-snapshot-v7-fidelity',
+      mode: data.mode || 'browser-snapshot-v8-stable',
       finalUrl: referer,
       snapshot,
+      fallbackRenderer: data.fallbackRenderer || null,
+      primaryRendererError: data.primaryRendererError || null,
       stats: data.stats || {
         layers: snapshot.layers.length,
         sections: snapshot.sections.length,
