@@ -28,7 +28,20 @@ function fillCss(fill) {
 function proxyImage(url, origin) {
   const raw = String(url || '');
   if (!raw || /^data:/i.test(raw) || /^blob:/i.test(raw)) return raw;
+  if (raw.startsWith(`${origin}/api/image?url=`)) return raw;
   return `${origin}/api/image?url=${encodeURIComponent(raw)}`;
+}
+function proxySnapshot(snapshot, origin) {
+  return {
+    ...snapshot,
+    sections: Array.isArray(snapshot.sections) ? snapshot.sections : [],
+    layers: Array.isArray(snapshot.layers)
+      ? snapshot.layers.map((layer) => {
+          if (!layer || layer.kind !== 'image' || !layer.url) return layer;
+          return { ...layer, url: proxyImage(layer.url, origin) };
+        })
+      : [],
+  };
 }
 
 function snapshotToHtml(snapshot, origin) {
@@ -69,7 +82,7 @@ function snapshotToHtml(snapshot, origin) {
 
         if (layer.kind === 'image' && layer.url) {
           style.push(`object-fit:${layer.imageScaleMode === 'FIT' ? 'contain' : 'cover'}`, 'display:block');
-          return `<img data-browser-snapshot="image" src="${escAttr(proxyImage(layer.url, origin))}" style="${style.join(';')}">`;
+          return `<img data-browser-snapshot="image" src="${escAttr(layer.url)}" style="${style.join(';')}">`;
         }
         if (layer.kind === 'svg' && layer.svg) {
           const svg = String(layer.svg)
@@ -132,21 +145,23 @@ module.exports = async function handler(req, res) {
       return res.status(502).json({ ok: false, error: 'Серверный Chromium не вернул снимок страницы' });
     }
 
-    const html = snapshotToHtml(data.snapshot, origin);
+    const snapshot = proxySnapshot(data.snapshot, origin);
+    const html = snapshotToHtml(snapshot, origin);
     if (html.length > 2950000) {
       return res.status(502).json({ ok: false, error: 'Отрендерированный снимок страницы превышает лимит 2.95 МБ' });
     }
 
     return res.status(200).json({
       ok: true,
-      mode: data.mode || 'browser-snapshot-v3',
+      mode: data.mode || 'browser-snapshot-v4',
       finalUrl: data.finalUrl || String(rawUrl),
+      snapshot,
       html,
       stats: data.stats || {
-        layers: data.snapshot.layers.length,
-        sections: Array.isArray(data.snapshot.sections) ? data.snapshot.sections.length : 0,
-        height: data.snapshot.height,
-        truncated: !!data.snapshot.truncated,
+        layers: snapshot.layers.length,
+        sections: Array.isArray(snapshot.sections) ? snapshot.sections.length : 0,
+        height: snapshot.height,
+        truncated: !!snapshot.truncated,
       },
     });
   } catch (error) {
