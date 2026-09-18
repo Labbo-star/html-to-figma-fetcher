@@ -15,7 +15,7 @@ function cors(res) {
 }
 
 function isPrivateV4(ip) {
-  const p = ip.split('.').map(Number);
+  const p = String(ip || '').split('.').map(Number);
   if (p.length !== 4 || p.some((x) => !Number.isInteger(x) || x < 0 || x > 255)) return true;
   const [a, b] = p;
   return a === 0 || a === 10 || a === 127 ||
@@ -70,29 +70,33 @@ async function assertPublicUrl(raw) {
   return url;
 }
 
-async function renderPage(rawUrl, width) {
-  let stage = 'загрузка Chromium';
-  const safeUrl = await assertPublicUrl(rawUrl);
-
-  let puppeteer;
-  let chromium;
+async function loadChromiumModules() {
   try {
-    const puppeteerModule = await import('puppeteer-core');
-    const chromiumModule = await import('@sparticuz/chromium');
-    puppeteer = puppeteerModule.default || puppeteerModule;
-    chromium = chromiumModule.default || chromiumModule;
+    const [pupMod, chrMod] = await Promise.all([
+      import('puppeteer-core'),
+      import('@sparticuz/chromium'),
+    ]);
+    return {
+      puppeteer: pupMod.default || pupMod,
+      chromium: chrMod.default || chrMod,
+    };
   } catch (error) {
     throw new Error(`Не удалось загрузить Chromium-модули: ${error && error.message ? error.message : error}`);
   }
+}
 
+async function renderPage(rawUrl, width) {
+  let stage = 'проверка адреса';
+  const safeUrl = await assertPublicUrl(rawUrl);
+  const { puppeteer, chromium } = await loadChromiumModules();
   chromium.setGraphicsMode = false;
+
   let browser;
   try {
     stage = 'запуск Chromium';
-    const executablePath = await chromium.executablePath();
     browser = await puppeteer.launch({
       args: [...chromium.args, '--disable-dev-shm-usage'],
-      executablePath,
+      executablePath: await chromium.executablePath(),
       headless: 'shell',
       defaultViewport: { width, height: VIEWPORT_HEIGHT, deviceScaleFactor: 1 },
     });
@@ -102,7 +106,7 @@ async function renderPage(rawUrl, width) {
     await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.7' });
 
-    stage = 'настройка сетевых запросов';
+    stage = 'сетевые запросы';
     await page.setRequestInterception(true);
     page.on('request', async (request) => {
       try {
@@ -124,12 +128,12 @@ async function renderPage(rawUrl, width) {
 
     stage = 'ожидание Tilda';
     await Promise.race([
-      page.waitForNetworkIdle({ idleTime: 300, timeout: 1800 }).catch(() => {}),
-      new Promise((resolve) => setTimeout(resolve, 1900)),
+      page.waitForNetworkIdle({ idleTime: 250, timeout: 1700 }).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 1800)),
     ]);
     await Promise.race([
       page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {}),
-      new Promise((resolve) => setTimeout(resolve, 1000)),
+      new Promise((resolve) => setTimeout(resolve, 900)),
     ]);
 
     stage = 'lazy-load';
@@ -137,12 +141,12 @@ async function renderPage(rawUrl, width) {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const root = document.scrollingElement || document.documentElement;
       const total = Math.min(maxHeight, Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0, 1));
-      for (let y = 0; y < total; y += 1500) {
+      for (let y = 0; y < total; y += 1300) {
         window.scrollTo(0, y);
-        await sleep(25);
+        await sleep(28);
       }
       window.scrollTo(0, 0);
-      await sleep(250);
+      await sleep(280);
     }, MAX_HEIGHT);
 
     await page.addStyleTag({
@@ -154,7 +158,7 @@ async function renderPage(rawUrl, width) {
       const win = window;
       const doc = document;
       const layers = [];
-      let z = 0;
+      let seq = 0;
       let truncated = false;
 
       const num = (v, f = 0) => { const n = Number.parseFloat(v); return Number.isFinite(n) ? n : f; };
@@ -172,13 +176,12 @@ async function renderPage(rawUrl, width) {
         };
       };
       const rect = (r) => ({ x: round(r.left + win.scrollX), y: round(r.top + win.scrollY), width: round(r.width), height: round(r.height) });
-      const visible = (r, s) => r.width > .5 && r.height > .5 && s.display !== 'none' && s.visibility !== 'hidden' && num(s.opacity, 1) > .01;
       const layerName = (e, suffix = '') => ((e.tagName || 'node').toLowerCase() + (e.id ? '#' + e.id : '') + (e.classList && e.classList.length ? '.' + Array.from(e.classList).slice(0, 2).join('.') : '') + suffix).slice(0, 100);
       const add = (layer) => {
         if (layers.length >= maxLayers) { truncated = true; return false; }
         if (!layer || !Number.isFinite(layer.x) || !Number.isFinite(layer.y) || layer.width <= .5 || layer.height <= .5) return true;
         if (layer.y > maxHeight + 500 || layer.x > viewportWidth + 1000 || layer.x + layer.width < -1000) return true;
-        layer.z = z++;
+        layer.z = seq++;
         layers.push(layer);
         return true;
       };
@@ -208,20 +211,58 @@ async function renderPage(rawUrl, width) {
       const family = (v) => String(v || 'Inter').split(',')[0].trim().replace(/^['"]|['"]$/g, '') || 'Inter';
       const lineHeight = (s) => s.lineHeight === 'normal' ? num(s.fontSize, 16) * 1.2 : num(s.lineHeight, num(s.fontSize, 16) * 1.2);
 
+      function hiddenByState(e) {
+        let n = e;
+        for (let i = 0; n && n !== doc.documentElement && i < 30; i += 1, n = n.parentElement) {
+          if (n.hidden || n.getAttribute('aria-hidden') === 'true') return true;
+          if (n.classList && (n.classList.contains('slick-cloned') || n.classList.contains('swiper-slide-duplicate'))) return true;
+          const s = win.getComputedStyle(n);
+          if (s.display === 'none' || s.visibility === 'hidden' || num(s.opacity, 1) <= .01) return true;
+        }
+        return false;
+      }
+
+      function clippedOut(e, r) {
+        let left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+        let n = e.parentElement;
+        for (let i = 0; n && n !== doc.documentElement && i < 30; i += 1, n = n.parentElement) {
+          const s = win.getComputedStyle(n);
+          const ox = String(s.overflowX || s.overflow || '').toLowerCase();
+          const oy = String(s.overflowY || s.overflow || '').toLowerCase();
+          const clipX = ox === 'hidden' || ox === 'clip' || ox === 'scroll' || ox === 'auto';
+          const clipY = oy === 'hidden' || oy === 'clip' || oy === 'scroll' || oy === 'auto';
+          if (!clipX && !clipY) continue;
+          const pr = n.getBoundingClientRect();
+          if (clipX) { left = Math.max(left, pr.left); right = Math.min(right, pr.right); }
+          if (clipY) { top = Math.max(top, pr.top); bottom = Math.min(bottom, pr.bottom); }
+          if (right - left <= .5 || bottom - top <= .5) return true;
+        }
+        return false;
+      }
+
+      function visible(e, r, s) {
+        if (r.width <= .5 || r.height <= .5) return false;
+        if (s.display === 'none' || s.visibility === 'hidden' || num(s.opacity, 1) <= .01) return false;
+        if (hiddenByState(e)) return false;
+        if (clippedOut(e, r)) return false;
+        return true;
+      }
+
       const sectionEls = [];
       const seen = new Set();
       for (const e of Array.from(doc.querySelectorAll('#allrecords > .t-rec, .t-rec[id], header, main > section, footer'))) {
         if (seen.has(e)) continue;
         const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
-        if (!visible(r, s)) continue;
+        if (!visible(e, r, s)) continue;
         seen.add(e); sectionEls.push(e);
       }
       if (!sectionEls.length && doc.body) {
         for (const e of Array.from(doc.body.children)) {
           const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
-          if (visible(r, s)) sectionEls.push(e);
+          if (visible(e, r, s)) sectionEls.push(e);
         }
       }
+
       const sectionMap = new Map();
       const sections = sectionEls.map((e, i) => {
         const r = e.getBoundingClientRect();
@@ -243,7 +284,7 @@ async function renderPage(rawUrl, width) {
         if (truncated) break;
         if (!(e instanceof HTMLElement || e instanceof SVGElement)) continue;
         const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
-        if (!visible(r, s)) continue;
+        if (!visible(e, r, s)) continue;
         const base = rect(r), sectionId = sectionFor(e, r), opacity = num(s.opacity, 1), rad = radius(s);
 
         if (e instanceof SVGElement && e.tagName.toLowerCase() === 'svg') {
@@ -302,7 +343,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
 
   if (String(req.query.ping || '') === '1') {
-    return res.status(200).json({ ok: true, service: 'browser-renderer', version: 2 });
+    return res.status(200).json({ ok: true, service: 'browser-renderer', version: 3 });
   }
 
   const rawUrl = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
@@ -314,7 +355,7 @@ module.exports = async function handler(req, res) {
     const { finalUrl, snapshot } = await renderPage(String(rawUrl), width);
     return res.status(200).json({
       ok: true,
-      mode: 'browser-snapshot',
+      mode: 'browser-snapshot-v3',
       finalUrl,
       snapshot,
       stats: { layers: snapshot.layers.length, sections: snapshot.sections.length, height: snapshot.height, truncated: snapshot.truncated },
