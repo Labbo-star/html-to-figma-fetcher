@@ -131,7 +131,7 @@ module.exports = async function handler(req, res) {
   const timer = setTimeout(() => controller.abort(), 27500);
   try {
     const origin = `https://${req.headers.host || 'html-to-figma-fetcher-v2.vercel.app'}`;
-    const endpoint = `${origin}/api/render?url=${encodeURIComponent(String(rawUrl))}&width=${encodeURIComponent(String(width))}`;
+    const endpoint = `${origin}/api/render5?url=${encodeURIComponent(String(rawUrl))}&width=${encodeURIComponent(String(width))}`;
     const response = await fetch(endpoint, { method: 'GET', cache: 'no-store', signal: controller.signal });
     const text = await response.text();
     let data;
@@ -153,7 +153,7 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
-      mode: data.mode || 'browser-snapshot-v4',
+      mode: data.mode || 'browser-snapshot-v5-hierarchical',
       finalUrl: data.finalUrl || String(rawUrl),
       snapshot,
       html,
