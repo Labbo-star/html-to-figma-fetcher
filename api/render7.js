@@ -8,7 +8,7 @@ const VIEWPORT_HEIGHT = 1100;
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
   res.setHeader('Cache-Control', 'no-store');
@@ -87,7 +87,7 @@ async function safeAbort(req) {
   } catch {}
 }
 
-async function renderPage(rawUrl, width) {
+async function renderPage(rawUrl, width, options = {}) {
   let stage = 'проверка адреса';
   const safe = await assertPublicUrl(rawUrl);
   const { puppeteer, chromium } = await modules();
@@ -347,7 +347,12 @@ async function renderPage(rawUrl, width) {
         const r = e.getBoundingClientRect(), s = win.getComputedStyle(e), id = 'section-' + i;
         sectionMap.set(e, id);
         const ox = String(s.overflowX || s.overflow || '').toLowerCase(), oy = String(s.overflowY || s.overflow || '').toLowerCase();
-        sections.push({ id, name: (e.id || (e.classList && e.classList[0]) || e.tagName.toLowerCase()).slice(0, 90), y: round(r.top + win.scrollY), height: Math.max(1, round(r.height)), clipsContent: ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy) });
+        const secX = round(r.left + win.scrollX), secY = round(r.top + win.scrollY), secW = Math.max(1, round(r.width)), secH = Math.max(1, round(r.height));
+        sections.push({ id, name: (e.id || (e.classList && e.classList[0]) || e.tagName.toLowerCase()).slice(0, 90), y: secY, height: secH, clipsContent: ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy) });
+        const sf = fill(s);
+        if (sf) add({ kind: 'shape', name: 'section background', x: secX, y: secY, absX: secX, absY: secY, width: secW, height: secH, opacity: num(s.opacity, 1), fill: sf, sectionId: id, zIndex: -100000, paintPhase: -100 });
+        const sbg = urls(s.backgroundImage);
+        for (const u of sbg.slice(0, 3)) add({ kind: 'image', name: 'section background image', x: secX, y: secY, absX: secX, absY: secY, width: secW, height: secH, opacity: num(s.opacity, 1), url: u, sourceUrl: u, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', backgroundPosition: String(s.backgroundPosition || '50% 50%'), backgroundSize: String(s.backgroundSize || 'cover'), sectionId: id, zIndex: -99999, paintPhase: -99, captureSafe: false });
       });
       const sectionFor = (e, r) => {
         const c = e.closest ? e.closest('.t-rec,header,section,footer') : null;
@@ -361,7 +366,7 @@ async function renderPage(rawUrl, width) {
       for (const e of candidates) {
         if (!(e instanceof HTMLElement)) continue;
         const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
-        if (!visible(e, r, s) || e === doc.body || e === doc.documentElement || e.matches('.t-rec,#allrecords')) continue;
+        if (!visible(e, r, s) || e === doc.body || e === doc.documentElement || e.matches('.t-rec,#allrecords') || sectionMap.has(e)) continue;
         const button = e.matches('button,[role="button"],.t-btn,.btn,.button,a[class*="btn"],a[class*="button"]'), visual = hasVisual(s), desc = e.querySelectorAll ? e.querySelectorAll('*').length : 0, content = (e.innerText || '').trim().length > 0 || !!e.querySelector('img,svg,picture'), modest = r.width <= 1200 && r.height <= 1200 && r.width >= 18 && r.height >= 14;
         if (button || (visual && modest && content && desc <= 120)) {
           const key = 'container-' + (++containerSeq);
@@ -447,13 +452,13 @@ async function renderPage(rawUrl, width) {
           const raw = originalRaw || currentRaw;
           if (raw) {
             const u = fullTilda(raw), source = fullTilda(currentRaw || raw);
-            add({ kind: 'image', name: name(e), ...relative(abs, parentKey), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: source, radius: rad || undefined, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', objectPosition: String(s.objectPosition || '50% 50%'), sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 2 });
+            add({ kind: 'image', name: name(e), ...relative(abs, parentKey), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: source, radius: rad || undefined, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', objectPosition: String(s.objectPosition || '50% 50%'), sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 2, captureSafe: true });
           }
           continue;
         }
         const bgUrls = urls(s.backgroundImage);
         for (const u of bgUrls.slice(0, 3)) {
-          add({ kind: 'image', name: name(e, ' — фон'), ...relative(abs, childParent), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: u, radius: rad || undefined, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', backgroundPosition: String(s.backgroundPosition || '50% 50%'), backgroundSize: String(s.backgroundSize || 'cover'), sectionId, parentContainerKey: childParent, zIndex: zi, paintPhase: 0 });
+          add({ kind: 'image', name: name(e, ' — фон'), ...relative(abs, childParent), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: u, radius: rad || undefined, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', backgroundPosition: String(s.backgroundPosition || '50% 50%'), backgroundSize: String(s.backgroundSize || 'cover'), sectionId, parentContainerKey: childParent, zIndex: zi, paintPhase: 0, captureSafe: false });
         }
         if (!ownKey && e !== doc.body && e !== doc.documentElement) {
           const f = fill(s), bw = borderWidth(s), sh = shadow(s.boxShadow);
@@ -473,11 +478,37 @@ async function renderPage(rawUrl, width) {
 
       const root = doc.scrollingElement || doc.documentElement;
       const height = Math.min(maxHeight, Math.max(root.scrollHeight, doc.body ? doc.body.scrollHeight : 0, 1));
-      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 8 };
+      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 9 };
     }, { maxLayers: MAX_LAYERS, maxHeight: MAX_HEIGHT, viewportWidth: width });
 
     if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');
-    return { finalUrl: page.url(), snapshot };
+
+    const captures = [];
+    if (Array.isArray(options.captureClips) && options.captureClips.length) {
+      stage = 'fallback-снимки изображений';
+      for (const item of options.captureClips.slice(0, 48)) {
+        const id = String(item && item.id != null ? item.id : '');
+        const x = Math.max(0, Math.min(width - 1, Number(item && item.x) || 0));
+        const y = Math.max(0, Math.min(snapshot.height - 1, Number(item && item.y) || 0));
+        const cw = Math.max(1, Math.min(4096, width - x, Number(item && item.width) || 1));
+        const ch = Math.max(1, Math.min(4096, snapshot.height - y, Number(item && item.height) || 1));
+        try {
+          const buffer = await page.screenshot({ type: 'png', clip: { x, y, width: cw, height: ch }, captureBeyondViewport: true });
+          captures.push({ id, dataBase64: Buffer.from(buffer).toString('base64') });
+        } catch (error) {
+          captures.push({ id, error: error && error.message ? error.message : 'Не удалось снять fallback' });
+        }
+      }
+    }
+
+    let referenceBuffer = null;
+    if (options.reference === true) {
+      stage = 'контрольный снимок';
+      const refHeight = Math.max(1, Math.min(snapshot.height, 30000));
+      referenceBuffer = await page.screenshot({ type: 'webp', quality: 84, clip: { x: 0, y: 0, width, height: refHeight }, captureBeyondViewport: true });
+    }
+
+    return { finalUrl: page.url(), snapshot, captures, referenceBuffer };
   } catch (e) {
     throw new Error(`${stage}: ${e && e.message ? e.message : e}`);
   } finally {
@@ -488,16 +519,41 @@ async function renderPage(rawUrl, width) {
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
-  if (String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'browser-renderer', version: 8 });
-  const raw = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
-  const width = Math.max(320, Math.min(1920, Number(Array.isArray(req.query.width) ? req.query.width[0] : req.query.width) || 1440));
+  if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ ok: false, error: 'Разрешены только GET, POST и OPTIONS' });
+  if (req.method === 'GET' && String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'browser-renderer', version: 9, visualQa: true });
+
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  if (!body || typeof body !== 'object') body = {};
+
+  const raw = req.method === 'POST'
+    ? (Array.isArray(body.url) ? body.url[0] : body.url)
+    : (Array.isArray(req.query.url) ? req.query.url[0] : req.query.url);
+  const rawWidth = req.method === 'POST'
+    ? (Array.isArray(body.width) ? body.width[0] : body.width)
+    : (Array.isArray(req.query.width) ? req.query.width[0] : req.query.width);
+  const width = Math.max(320, Math.min(1920, Number(rawWidth) || 1440));
   if (!raw) return res.status(400).json({ ok: false, error: 'Не передан параметр url' });
+
   try {
-    const { finalUrl, snapshot } = await renderPage(String(raw), width);
+    if (req.method === 'POST' && String(body.mode || '') === 'capture-clips') {
+      const clips = Array.isArray(body.clips) ? body.clips : [];
+      const { finalUrl, captures } = await renderPage(String(raw), width, { captureClips: clips });
+      return res.status(200).json({ ok: true, mode: 'capture-clips-v1', finalUrl, captures });
+    }
+
+    const wantsReference = req.method === 'GET' && String(req.query.reference || '') === '1';
+    const { finalUrl, snapshot, referenceBuffer } = await renderPage(String(raw), width, { reference: wantsReference });
+    if (wantsReference) {
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('X-Final-Url', finalUrl);
+      res.setHeader('X-Renderer-Version', '9');
+      return res.status(200).send(referenceBuffer);
+    }
+
     return res.status(200).json({
       ok: true,
-      mode: 'browser-snapshot-v8-stable',
+      mode: 'browser-snapshot-v9-visual-qa',
       finalUrl,
       snapshot,
       stats: {
@@ -507,6 +563,7 @@ module.exports = async function handler(req, res) {
         truncated: snapshot.truncated,
         imageLayers: snapshot.layers.filter(x => x.kind === 'image').length,
         textLayers: snapshot.layers.filter(x => x.kind === 'text').length,
+        visualQa: true,
       },
     });
   } catch (e) {
