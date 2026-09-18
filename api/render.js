@@ -1,7 +1,7 @@
 const dns = require('node:dns').promises;
 const net = require('node:net');
 
-const MAX_LAYERS = 2400;
+const MAX_LAYERS = 2800;
 const MAX_HEIGHT = 30000;
 const NAV_TIMEOUT = 12000;
 const VIEWPORT_HEIGHT = 1000;
@@ -76,10 +76,7 @@ async function loadChromiumModules() {
       import('puppeteer-core'),
       import('@sparticuz/chromium'),
     ]);
-    return {
-      puppeteer: pupMod.default || pupMod,
-      chromium: chrMod.default || chrMod,
-    };
+    return { puppeteer: pupMod.default || pupMod, chromium: chrMod.default || chrMod };
   } catch (error) {
     throw new Error(`Не удалось загрузить Chromium-модули: ${error && error.message ? error.message : error}`);
   }
@@ -106,6 +103,48 @@ async function renderPage(rawUrl, width) {
     await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.7' });
 
+    // Track timers without preventing site initialization. After the first stable state
+    // is reached we clear them so sliders, tabs and rotating banners cannot advance.
+    await page.evaluateOnNewDocument(() => {
+      const intervals = new Set();
+      const timeouts = new Set();
+      const nativeSetInterval = window.setInterval.bind(window);
+      const nativeClearInterval = window.clearInterval.bind(window);
+      const nativeSetTimeout = window.setTimeout.bind(window);
+      const nativeClearTimeout = window.clearTimeout.bind(window);
+
+      window.setInterval = function (handler, timeout, ...args) {
+        const id = nativeSetInterval(handler, timeout, ...args);
+        intervals.add(id);
+        return id;
+      };
+      window.clearInterval = function (id) {
+        intervals.delete(id);
+        return nativeClearInterval(id);
+      };
+      window.setTimeout = function (handler, timeout, ...args) {
+        let id;
+        const wrapped = (...inner) => {
+          timeouts.delete(id);
+          if (typeof handler === 'function') return handler(...inner);
+          return Function(String(handler))();
+        };
+        id = nativeSetTimeout(wrapped, timeout, ...args);
+        timeouts.add(id);
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        timeouts.delete(id);
+        return nativeClearTimeout(id);
+      };
+      window.__FIGMA_FREEZE_TIMERS__ = () => {
+        for (const id of intervals) nativeClearInterval(id);
+        for (const id of timeouts) nativeClearTimeout(id);
+        intervals.clear();
+        timeouts.clear();
+      };
+    });
+
     stage = 'сетевые запросы';
     await page.setRequestInterception(true);
     page.on('request', async (request) => {
@@ -126,32 +165,139 @@ async function renderPage(rawUrl, width) {
     stage = 'открытие страницы';
     await page.goto(safeUrl.href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
 
-    stage = 'ожидание Tilda';
+    // Give Tilda / slider libraries enough time to build the FIRST state, but do not
+    // wait long enough for normal autoplay intervals to advance to slide 2/3.
+    stage = 'первоначальное состояние';
     await Promise.race([
-      page.waitForNetworkIdle({ idleTime: 250, timeout: 1700 }).catch(() => {}),
-      new Promise((resolve) => setTimeout(resolve, 1800)),
+      page.waitForNetworkIdle({ idleTime: 180, timeout: 900 }).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 950)),
     ]);
     await Promise.race([
       page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {}),
-      new Promise((resolve) => setTimeout(resolve, 900)),
+      new Promise((resolve) => setTimeout(resolve, 650)),
     ]);
+
+    stage = 'фиксация первого состояния';
+    await page.evaluate(() => {
+      try {
+        if (typeof window.__FIGMA_FREEZE_TIMERS__ === 'function') window.__FIGMA_FREEZE_TIMERS__();
+      } catch {}
+
+      // Pause CSS/Web Animations immediately at their current first-state frame.
+      try {
+        for (const animation of document.getAnimations ? document.getAnimations() : []) {
+          try { animation.pause(); } catch {}
+        }
+      } catch {}
+
+      const hide = (el) => {
+        if (!el || !el.style) return;
+        el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('visibility', 'hidden', 'important');
+        el.style.setProperty('opacity', '0', 'important');
+        el.setAttribute('aria-hidden', 'true');
+      };
+      const show = (el) => {
+        if (!el || !el.style) return;
+        el.style.removeProperty('display');
+        el.style.setProperty('visibility', 'visible', 'important');
+        el.style.setProperty('opacity', '1', 'important');
+        el.setAttribute('aria-hidden', 'false');
+      };
+
+      // Keep only the first logical slide for common Tilda and third-party sliders.
+      const sliderDefs = [
+        { root: '.t-slds__items-wrapper', item: '.t-slds__item', active: 't-slds__item_active' },
+        { root: '.t-slds__container', item: '.t-slds__item', active: 't-slds__item_active' },
+        { root: '.t-carousel__inner', item: '.t-carousel__item', active: 't-carousel__item_active' },
+        { root: '.swiper-wrapper', item: '.swiper-slide', active: 'swiper-slide-active' },
+        { root: '.slick-track', item: '.slick-slide', active: 'slick-active' },
+        { root: '.owl-stage', item: '.owl-item', active: 'active' },
+      ];
+      for (const def of sliderDefs) {
+        for (const root of document.querySelectorAll(def.root)) {
+          let items = Array.from(root.querySelectorAll(':scope > ' + def.item));
+          if (!items.length) items = Array.from(root.querySelectorAll(def.item));
+          items = items.filter((el) => !el.classList.contains('slick-cloned') && !el.classList.contains('swiper-slide-duplicate'));
+          if (items.length < 2) continue;
+          const first = items[0];
+          for (let i = 0; i < items.length; i += 1) {
+            const item = items[i];
+            item.classList.remove(def.active);
+            if (i === 0) {
+              item.classList.add(def.active);
+              item.style.setProperty('transform', 'none', 'important');
+              show(item);
+            } else hide(item);
+          }
+          if (root.style) root.style.setProperty('transform', 'none', 'important');
+          show(first);
+        }
+      }
+
+      // A number of custom sliders use data-slide-index without standard classes.
+      const indexed = Array.from(document.querySelectorAll('[data-slide-index]'));
+      const groups = new Map();
+      for (const item of indexed) {
+        const parent = item.parentElement;
+        if (!parent) continue;
+        if (!groups.has(parent)) groups.set(parent, []);
+        groups.get(parent).push(item);
+      }
+      for (const items of groups.values()) {
+        if (items.length < 2) continue;
+        items.sort((a, b) => Number(a.getAttribute('data-slide-index') || 0) - Number(b.getAttribute('data-slide-index') || 0));
+        items.forEach((item, i) => i === 0 ? show(item) : hide(item));
+      }
+
+      // Explicitly remove cloned slides from capture.
+      document.querySelectorAll('.slick-cloned,.swiper-slide-duplicate,[data-clone="true"]').forEach(hide);
+
+      // Promote lazy image/background sources without relying on autoplay or scrolling.
+      for (const img of document.querySelectorAll('img')) {
+        const src = img.getAttribute('data-original') || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
+        if (src && (!img.getAttribute('src') || String(img.getAttribute('src')).startsWith('data:image/gif'))) img.setAttribute('src', src);
+        const srcset = img.getAttribute('data-srcset') || img.getAttribute('data-lazy-srcset');
+        if (srcset) img.setAttribute('srcset', srcset);
+        try { img.loading = 'eager'; } catch {}
+      }
+      document.querySelectorAll('source[data-srcset],source[data-lazy-srcset]').forEach((el) => {
+        const value = el.getAttribute('data-srcset') || el.getAttribute('data-lazy-srcset');
+        if (value) el.setAttribute('srcset', value);
+      });
+      document.querySelectorAll('[data-original]').forEach((el) => {
+        if (el.tagName === 'IMG') return;
+        const raw = el.getAttribute('data-original');
+        if (!raw) return;
+        const cs = getComputedStyle(el);
+        if (!cs.backgroundImage || cs.backgroundImage === 'none') el.style.setProperty('background-image', `url("${raw.replace(/"/g, '')}")`, 'important');
+      });
+    });
+
+    await page.addStyleTag({
+      content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}',
+    }).catch(() => {});
 
     stage = 'lazy-load';
     await page.evaluate(async (maxHeight) => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const root = document.scrollingElement || document.documentElement;
       const total = Math.min(maxHeight, Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0, 1));
-      for (let y = 0; y < total; y += 1300) {
+      for (let y = 0; y < total; y += 1500) {
         window.scrollTo(0, y);
-        await sleep(28);
+        await sleep(16);
       }
       window.scrollTo(0, 0);
-      await sleep(280);
+      await sleep(80);
+      const pending = Array.from(document.images || []).filter((img) => !img.complete).slice(0, 120);
+      await Promise.race([
+        Promise.all(pending.map((img) => new Promise((done) => {
+          img.addEventListener('load', done, { once: true });
+          img.addEventListener('error', done, { once: true });
+        }))),
+        new Promise((done) => setTimeout(done, 1200)),
+      ]);
     }, MAX_HEIGHT);
-
-    await page.addStyleTag({
-      content: '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}',
-    }).catch(() => {});
 
     stage = 'снятие геометрии';
     const snapshot = await page.evaluate(({ maxLayers, maxHeight, viewportWidth }) => {
@@ -278,6 +424,26 @@ async function renderPage(rawUrl, width) {
         return hit ? hit.id : (sections[0] ? sections[0].id : undefined);
       };
 
+      function capturePseudo(e, which, sectionId) {
+        const ps = win.getComputedStyle(e, which);
+        if (!ps || ps.display === 'none' || ps.visibility === 'hidden' || num(ps.opacity, 1) <= .01) return;
+        const content = clean(String(ps.content || '').replace(/^['"]|['"]$/g, ''));
+        const bgUrl = urlFromCss(ps.backgroundImage);
+        if (!content && !bgUrl) return;
+        const er = e.getBoundingClientRect();
+        const w = num(ps.width, 0), h = num(ps.height, 0);
+        if (w <= .5 || h <= .5) return;
+        const left = er.left + num(ps.left, 0);
+        const top = er.top + num(ps.top, 0);
+        const base = { x: round(left + win.scrollX), y: round(top + win.scrollY), width: round(w), height: round(h) };
+        if (bgUrl) {
+          add({ kind: 'image', name: layerName(e, ` ${which} — фон`), ...base, opacity: num(ps.opacity, 1), url: bgUrl, radius: radius(ps), imageScaleMode: String(ps.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', sectionId });
+        }
+        if (content && content !== 'none' && content !== 'normal') {
+          add({ kind: 'text', name: layerName(e, ` ${which} — текст`), ...base, opacity: num(ps.opacity, 1), fill: { kind: 'solid', color: color(ps.color) }, text: content, textRole: 'Body', fontSize: num(ps.fontSize, 16), fontWeight: num(ps.fontWeight, 400), fontFamily: family(ps.fontFamily), lineHeight: lineHeight(ps), letterSpacing: ps.letterSpacing === 'normal' ? 0 : num(ps.letterSpacing), textAlign: align(ps.textAlign), textSizing: 'FIXED', sectionId });
+        }
+      }
+
       const textSelectors = '.tn-atom,.t-title,.t-descr,.t-text,.t-name,.t-btn,.t-menu__link-item,h1,h2,h3,h4,h5,h6,p,button,label,li,blockquote,a';
       const candidates = Array.from(doc.querySelectorAll('body *'));
       for (const e of candidates) {
@@ -309,6 +475,9 @@ async function renderPage(rawUrl, width) {
             add({ kind: 'shape', name: layerName(e, ' — фон'), ...base, opacity, fill: gr || (bg.a > .01 ? { kind: 'solid', color: bg } : undefined), stroke: bw > .1 ? color(s.borderTopColor) : undefined, strokeWeight: bw || undefined, radius: rad || undefined, shadow: sh || undefined, sectionId });
           }
         }
+
+        capturePseudo(e, '::before', sectionId);
+        capturePseudo(e, '::after', sectionId);
 
         if (e.matches && e.matches(textSelectors)) {
           const childTextBlock = Array.from(e.children || []).some((c) => c.matches && c.matches(textSelectors));
@@ -343,7 +512,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Разрешены только GET и OPTIONS' });
 
   if (String(req.query.ping || '') === '1') {
-    return res.status(200).json({ ok: true, service: 'browser-renderer', version: 3 });
+    return res.status(200).json({ ok: true, service: 'browser-renderer', version: 4 });
   }
 
   const rawUrl = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
@@ -355,7 +524,7 @@ module.exports = async function handler(req, res) {
     const { finalUrl, snapshot } = await renderPage(String(rawUrl), width);
     return res.status(200).json({
       ok: true,
-      mode: 'browser-snapshot-v3',
+      mode: 'browser-snapshot-v4-initial-state',
       finalUrl,
       snapshot,
       stats: { layers: snapshot.layers.length, sections: snapshot.sections.length, height: snapshot.height, truncated: snapshot.truncated },
