@@ -9,15 +9,9 @@ function setCors(res) {
 function escText(value) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-function escAttr(value) {
-  return escText(value).replace(/"/g, '&quot;');
-}
-function channel(v) {
-  return Math.max(0, Math.min(255, Math.round((Number(v) || 0) * 255)));
-}
-function alpha(v) {
-  return Math.max(0, Math.min(1, Number(v) || 0));
-}
+function escAttr(value) { return escText(value).replace(/"/g, '&quot;'); }
+function channel(v) { return Math.max(0, Math.min(255, Math.round((Number(v) || 0) * 255))); }
+function alpha(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
 function cssColor(c) {
   if (!c) return 'rgba(0,0,0,0)';
   return `rgba(${channel(c.r)},${channel(c.g)},${channel(c.b)},${alpha(c.a)})`;
@@ -26,15 +20,18 @@ function fillCss(fill) {
   if (!fill) return 'transparent';
   if (fill.kind === 'solid') return cssColor(fill.color);
   if (fill.kind === 'linear' && Array.isArray(fill.stops) && fill.stops.length) {
-    const stops = fill.stops
-      .map((s) => `${cssColor(s.color)} ${Math.round((Number(s.position) || 0) * 100)}%`)
-      .join(',');
+    const stops = fill.stops.map((s) => `${cssColor(s.color)} ${Math.round((Number(s.position) || 0) * 100)}%`).join(',');
     return `linear-gradient(${Number(fill.angle) || 180}deg,${stops})`;
   }
   return 'transparent';
 }
+function proxyImage(url, origin) {
+  const raw = String(url || '');
+  if (!raw || /^data:/i.test(raw) || /^blob:/i.test(raw)) return raw;
+  return `${origin}/api/image?url=${encodeURIComponent(raw)}`;
+}
 
-function snapshotToHtml(snapshot) {
+function snapshotToHtml(snapshot, origin) {
   const width = Number(snapshot.width) || 1440;
   const sections = Array.isArray(snapshot.sections) && snapshot.sections.length
     ? snapshot.sections.slice().sort((a, b) => (Number(a.y) || 0) - (Number(b.y) || 0))
@@ -51,7 +48,7 @@ function snapshotToHtml(snapshot) {
     byId.get(id).push(layer);
   }
 
-  const sectionHtml = sections.map((section, index) => {
+  const sectionHtml = sections.map((section) => {
     const items = (byId.get(section.id) || [])
       .sort((a, b) => (Number(a.z) || 0) - (Number(b.z) || 0))
       .map((layer) => {
@@ -68,13 +65,11 @@ function snapshotToHtml(snapshot) {
           'margin:0',
         ];
         if (layer.radius) style.push(`border-radius:${Number(layer.radius) || 0}px`);
-        if (layer.shadow) {
-          style.push(`box-shadow:${Number(layer.shadow.x) || 0}px ${Number(layer.shadow.y) || 0}px ${Number(layer.shadow.blur) || 0}px ${Number(layer.shadow.spread) || 0}px ${cssColor(layer.shadow.color)}`);
-        }
+        if (layer.shadow) style.push(`box-shadow:${Number(layer.shadow.x) || 0}px ${Number(layer.shadow.y) || 0}px ${Number(layer.shadow.blur) || 0}px ${Number(layer.shadow.spread) || 0}px ${cssColor(layer.shadow.color)}`);
 
         if (layer.kind === 'image' && layer.url) {
           style.push(`object-fit:${layer.imageScaleMode === 'FIT' ? 'contain' : 'cover'}`, 'display:block');
-          return `<img data-browser-snapshot="image" src="${escAttr(layer.url)}" style="${style.join(';')}">`;
+          return `<img data-browser-snapshot="image" src="${escAttr(proxyImage(layer.url, origin))}" style="${style.join(';')}">`;
         }
         if (layer.kind === 'svg' && layer.svg) {
           const svg = String(layer.svg)
@@ -99,9 +94,7 @@ function snapshotToHtml(snapshot) {
           return `<div data-browser-snapshot="text" style="${style.join(';')}">${escText(layer.text || '')}</div>`;
         }
         if (layer.fill) style.push(`background:${fillCss(layer.fill)}`);
-        if (layer.stroke && layer.strokeWeight) {
-          style.push(`border:${Number(layer.strokeWeight) || 1}px solid ${cssColor(layer.stroke)}`);
-        }
+        if (layer.stroke && layer.strokeWeight) style.push(`border:${Number(layer.strokeWeight) || 1}px solid ${cssColor(layer.stroke)}`);
         return `<div data-browser-snapshot="shape" style="${style.join(';')}"></div>`;
       }).join('');
 
@@ -139,14 +132,14 @@ module.exports = async function handler(req, res) {
       return res.status(502).json({ ok: false, error: 'Серверный Chromium не вернул снимок страницы' });
     }
 
-    const html = snapshotToHtml(data.snapshot);
+    const html = snapshotToHtml(data.snapshot, origin);
     if (html.length > 2950000) {
       return res.status(502).json({ ok: false, error: 'Отрендерированный снимок страницы превышает лимит 2.95 МБ' });
     }
 
     return res.status(200).json({
       ok: true,
-      mode: 'browser-static-html',
+      mode: data.mode || 'browser-snapshot-v3',
       finalUrl: data.finalUrl || String(rawUrl),
       html,
       stats: data.stats || {
