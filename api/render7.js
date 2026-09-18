@@ -268,13 +268,21 @@ async function renderPage(rawUrl, width, options = {}) {
     const snapshot = await page.evaluate(({ maxLayers, maxHeight, viewportWidth }) => {
       const win = window, doc = document, layers = [];
       let seq = 0, truncated = false, containerSeq = 0;
-      const emitted = new Set(), semantic = new Map(), absBoxes = new Map(), imageCaptureIds = new Map();
-      let imageCaptureSeq = 0;
+      const emitted = new Set(), semantic = new Map(), absBoxes = new Map(), imageCaptureIds = new Map(), bgCaptureIds = new Map();
+      let imageCaptureSeq = 0, bgCaptureSeq = 0;
       for (const img of Array.from(doc.images || [])) {
         const captureId = 'imgcap-' + (imageCaptureSeq++);
         imageCaptureIds.set(img, captureId);
         try { img.setAttribute('data-html2figma-capture', captureId); } catch {}
       }
+      const bgCaptureId = el => {
+        if (!el || !(el instanceof HTMLElement)) return undefined;
+        if (bgCaptureIds.has(el)) return bgCaptureIds.get(el);
+        const id = 'bgcap-' + (bgCaptureSeq++);
+        bgCaptureIds.set(el, id);
+        try { el.setAttribute('data-html2figma-bg-capture', id); } catch {}
+        return id;
+      };
       const num = (v, f = 0) => { const n = Number.parseFloat(v); return Number.isFinite(n) ? n : f; };
       const round = v => Math.round(v * 100) / 100;
       const color = v => {
@@ -322,6 +330,13 @@ async function renderPage(rawUrl, width, options = {}) {
           if (n.hidden || n.getAttribute('aria-hidden') === 'true') return false;
           const cs = win.getComputedStyle(n);
           if (cs.display === 'none' || cs.visibility === 'hidden' || num(cs.opacity, 1) <= .01) return false;
+          if (n !== e) {
+            const ox = String(cs.overflowX || cs.overflow || '').toLowerCase(), oy = String(cs.overflowY || cs.overflow || '').toLowerCase();
+            if (['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy)) {
+              const pr = n.getBoundingClientRect();
+              if (r.right <= pr.left || r.left >= pr.right || r.bottom <= pr.top || r.top >= pr.bottom) return false;
+            }
+          }
         }
         return true;
       };
@@ -357,8 +372,10 @@ async function renderPage(rawUrl, width, options = {}) {
         sections.push({ id, name: (e.id || (e.classList && e.classList[0]) || e.tagName.toLowerCase()).slice(0, 90), y: secY, height: secH, clipsContent: ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy) });
         const sf = fill(s);
         if (sf) add({ kind: 'shape', name: 'section background', x: secX, y: secY, absX: secX, absY: secY, width: secW, height: secH, opacity: num(s.opacity, 1), fill: sf, sectionId: id, zIndex: -100000, paintPhase: -100 });
-        const sbg = urls(s.backgroundImage);
-        for (const u of sbg.slice(0, 3)) add({ kind: 'image', name: 'section background image', x: secX, y: secY, absX: secX, absY: secY, width: secW, height: secH, opacity: num(s.opacity, 1), url: u, sourceUrl: u, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', backgroundPosition: String(s.backgroundPosition || '50% 50%'), backgroundSize: String(s.backgroundSize || 'cover'), sectionId: id, zIndex: -99999, paintPhase: -99, captureSafe: false });
+        const sbg = urls(s.backgroundImage), secBgCap = sbg.length ? bgCaptureId(e) : undefined;
+        const secBgSize = String(s.backgroundSize || 'cover'), secBgPos = String(s.backgroundPosition || '50% 50%'), secBgRepeat = String(s.backgroundRepeat || 'repeat');
+        const secPreferCapture = sbg.length > 0 && (!/^(cover|contain)(\s*,\s*(cover|contain))*$/i.test(secBgSize.trim()) || !/^(50%|center)\s+(50%|center)$/i.test(secBgPos.trim()) || !/^no-repeat(?:\s*,\s*no-repeat)*$/i.test(secBgRepeat.trim()));
+        for (const u of sbg.slice(0, 3)) add({ kind: 'image', name: 'section background image', x: secX, y: secY, absX: secX, absY: secY, width: secW, height: secH, opacity: num(s.opacity, 1), url: u, sourceUrl: u, imageScaleMode: secBgSize.includes('contain') ? 'FIT' : 'FILL', backgroundPosition: secBgPos, backgroundSize: secBgSize, sectionId: id, zIndex: -99999, paintPhase: -99, captureSafe: true, captureId: secBgCap, captureMode: 'background', preferCapture: secPreferCapture });
       });
       const sectionFor = (e, r) => {
         const c = e.closest ? e.closest('.t-rec,header,section,footer') : null;
@@ -373,8 +390,10 @@ async function renderPage(rawUrl, width, options = {}) {
         if (!(e instanceof HTMLElement)) continue;
         const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
         if (!visible(e, r, s) || e === doc.body || e === doc.documentElement || e.matches('.t-rec,#allrecords') || sectionMap.has(e)) continue;
-        const button = e.matches('button,[role="button"],.t-btn,.btn,.button,a[class*="btn"],a[class*="button"]'), visual = hasVisual(s), desc = e.querySelectorAll ? e.querySelectorAll('*').length : 0, content = (e.innerText || '').trim().length > 0 || !!e.querySelector('img,svg,picture'), modest = r.width <= 1200 && r.height <= 1200 && r.width >= 18 && r.height >= 14;
-        if (button || (visual && modest && content && desc <= 120)) {
+        const ox = String(s.overflowX || s.overflow || '').toLowerCase(), oy = String(s.overflowY || s.overflow || '').toLowerCase();
+        const clipper = ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy);
+        const button = e.matches('button,[role="button"],.t-btn,.btn,.button,a[class*="btn"],a[class*="button"]'), visual = hasVisual(s), desc = e.querySelectorAll ? e.querySelectorAll('*').length : 0, content = (e.innerText || '').trim().length > 0 || !!e.querySelector('img,svg,picture'), modest = r.width <= 1200 && r.height <= 1200 && r.width >= 18 && r.height >= 14, structuralClip = clipper && r.width >= 2 && r.height >= 2 && r.width <= viewportWidth * 1.5 && r.height <= 5000;
+        if (button || structuralClip || (visual && modest && content && desc <= 120)) {
           const key = 'container-' + (++containerSeq);
           semantic.set(e, key); absBoxes.set(key, rect(r));
         }
@@ -394,7 +413,10 @@ async function renderPage(rawUrl, width, options = {}) {
         for (let i = 0; e && e !== doc.body && i < 20; i++, e = e.parentElement) {
           if (!(e instanceof HTMLElement)) continue;
           const tag = e.tagName;
-          if (/^(H[1-6]|P|LI|LABEL|BUTTON|A|TD|TH)$/.test(tag) || e.matches('.tn-atom,.t-title,.t-name,.t-descr,.t-text,.t-btn,[role="button"]')) return e;
+          if (tag === 'A') {
+            const p = e.parentElement && e.parentElement.closest ? e.parentElement.closest('p,li,label,h1,h2,h3,h4,h5,h6,td,th,.tn-atom,.t-title,.t-name,.t-descr,.t-text') : null;
+            if (!p) return e;
+          } else if (/^(H[1-6]|P|LI|LABEL|BUTTON|TD|TH)$/.test(tag) || e.matches('.tn-atom,.t-title,.t-name,.t-descr,.t-text,.t-btn,[role="button"]')) return e;
           const cs = win.getComputedStyle(e);
           if (['block', 'flex', 'grid', 'list-item', 'table-cell'].includes(cs.display) && ((e.innerText || '').trim().length > 0)) return e;
         }
@@ -463,8 +485,10 @@ async function renderPage(rawUrl, width, options = {}) {
           continue;
         }
         const bgUrls = urls(s.backgroundImage);
+        const bgSize = String(s.backgroundSize || 'cover'), bgPos = String(s.backgroundPosition || '50% 50%'), bgRepeat = String(s.backgroundRepeat || 'repeat'), bgCap = bgUrls.length ? bgCaptureId(e) : undefined;
+        const preferBgCapture = bgUrls.length > 0 && (!/^(cover|contain)(\s*,\s*(cover|contain))*$/i.test(bgSize.trim()) || !/^(50%|center)\s+(50%|center)$/i.test(bgPos.trim()) || !/^no-repeat(?:\s*,\s*no-repeat)*$/i.test(bgRepeat.trim()));
         for (const u of bgUrls.slice(0, 3)) {
-          add({ kind: 'image', name: name(e, ' — фон'), ...relative(abs, childParent), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: u, radius: rad || undefined, imageScaleMode: String(s.backgroundSize || '').includes('contain') ? 'FIT' : 'FILL', backgroundPosition: String(s.backgroundPosition || '50% 50%'), backgroundSize: String(s.backgroundSize || 'cover'), sectionId, parentContainerKey: childParent, zIndex: zi, paintPhase: 0, captureSafe: false });
+          add({ kind: 'image', name: name(e, ' — фон'), ...relative(abs, childParent), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: u, radius: rad || undefined, imageScaleMode: bgSize.includes('contain') ? 'FIT' : 'FILL', backgroundPosition: bgPos, backgroundSize: bgSize, sectionId, parentContainerKey: childParent, zIndex: zi, paintPhase: 0, captureSafe: true, captureId: bgCap, captureMode: 'background', preferCapture: preferBgCapture });
         }
         if (!ownKey && e !== doc.body && e !== doc.documentElement) {
           const f = fill(s), bw = borderWidth(s), sh = shadow(s.boxShadow);
@@ -484,7 +508,7 @@ async function renderPage(rawUrl, width, options = {}) {
 
       const root = doc.scrollingElement || doc.documentElement;
       const height = Math.min(maxHeight, Math.max(root.scrollHeight, doc.body ? doc.body.scrollHeight : 0, 1));
-      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 9 };
+      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 10 };
     }, { maxLayers: MAX_LAYERS, maxHeight: MAX_HEIGHT, viewportWidth: width });
 
     if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');
@@ -498,10 +522,23 @@ async function renderPage(rawUrl, width, options = {}) {
         try {
           let buffer = null;
           if (/^[A-Za-z0-9_-]{1,80}$/.test(captureId)) {
-            const handle = await page.$(`[data-html2figma-capture="${captureId}"]`);
+            const captureMode = String(item && item.captureMode || 'element');
+            const attr = captureMode === 'background' ? 'data-html2figma-bg-capture' : 'data-html2figma-capture';
+            const handle = await page.$(`[${attr}="${captureId}"]`);
+            let cleanupId = '';
             if (handle) {
+              if (captureMode === 'background') {
+                cleanupId = '__html2figma_bg_' + captureId;
+                await page.evaluate(({ captureId, cleanupId }) => {
+                  const st = document.createElement('style');
+                  st.id = cleanupId;
+                  st.textContent = `[data-html2figma-bg-capture="${captureId}"]{color:transparent!important;text-shadow:none!important}[data-html2figma-bg-capture="${captureId}"]>*{visibility:hidden!important}[data-html2figma-bg-capture="${captureId}"]::before,[data-html2figma-bg-capture="${captureId}"]::after{visibility:hidden!important}`;
+                  document.head.appendChild(st);
+                }, { captureId, cleanupId }).catch(() => {});
+              }
               const box = await handle.boundingBox();
               if (box && box.width > .5 && box.height > .5) buffer = await handle.screenshot({ type: 'png' });
+              if (cleanupId) await page.evaluate(id => { const x = document.getElementById(id); if (x) x.remove(); }, cleanupId).catch(() => {});
               await handle.dispose().catch(() => {});
             }
           }
@@ -538,7 +575,7 @@ module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ ok: false, error: 'Разрешены только GET, POST и OPTIONS' });
-  if (req.method === 'GET' && String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'browser-renderer', version: 9, visualQa: true });
+  if (req.method === 'GET' && String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'browser-renderer', version: 10, visualQa: true, clippingAncestors: true, backgroundCapture: true });
 
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
@@ -565,13 +602,13 @@ module.exports = async function handler(req, res) {
     if (wantsReference) {
       res.setHeader('Content-Type', 'image/webp');
       res.setHeader('X-Final-Url', finalUrl);
-      res.setHeader('X-Renderer-Version', '9');
+      res.setHeader('X-Renderer-Version', '10');
       return res.status(200).send(referenceBuffer);
     }
 
     return res.status(200).json({
       ok: true,
-      mode: 'browser-snapshot-v9-visual-qa',
+      mode: 'browser-snapshot-v10-fidelity',
       finalUrl,
       snapshot,
       stats: {
