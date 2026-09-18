@@ -268,7 +268,13 @@ async function renderPage(rawUrl, width, options = {}) {
     const snapshot = await page.evaluate(({ maxLayers, maxHeight, viewportWidth }) => {
       const win = window, doc = document, layers = [];
       let seq = 0, truncated = false, containerSeq = 0;
-      const emitted = new Set(), semantic = new Map(), absBoxes = new Map();
+      const emitted = new Set(), semantic = new Map(), absBoxes = new Map(), imageCaptureIds = new Map();
+      let imageCaptureSeq = 0;
+      for (const img of Array.from(doc.images || [])) {
+        const captureId = 'imgcap-' + (imageCaptureSeq++);
+        imageCaptureIds.set(img, captureId);
+        try { img.setAttribute('data-html2figma-capture', captureId); } catch {}
+      }
       const num = (v, f = 0) => { const n = Number.parseFloat(v); return Number.isFinite(n) ? n : f; };
       const round = v => Math.round(v * 100) / 100;
       const color = v => {
@@ -452,7 +458,7 @@ async function renderPage(rawUrl, width, options = {}) {
           const raw = originalRaw || currentRaw;
           if (raw) {
             const u = fullTilda(raw), source = fullTilda(currentRaw || raw);
-            add({ kind: 'image', name: name(e), ...relative(abs, parentKey), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: source, radius: rad || undefined, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', objectPosition: String(s.objectPosition || '50% 50%'), sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 2, captureSafe: true });
+            add({ kind: 'image', name: name(e), ...relative(abs, parentKey), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: source, radius: rad || undefined, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', objectPosition: String(s.objectPosition || '50% 50%'), sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 2, captureSafe: true, captureId: imageCaptureIds.get(e) });
           }
           continue;
         }
@@ -488,12 +494,24 @@ async function renderPage(rawUrl, width, options = {}) {
       stage = 'fallback-снимки изображений';
       for (const item of options.captureClips.slice(0, 48)) {
         const id = String(item && item.id != null ? item.id : '');
-        const x = Math.max(0, Math.min(width - 1, Number(item && item.x) || 0));
-        const y = Math.max(0, Math.min(snapshot.height - 1, Number(item && item.y) || 0));
-        const cw = Math.max(1, Math.min(4096, width - x, Number(item && item.width) || 1));
-        const ch = Math.max(1, Math.min(4096, snapshot.height - y, Number(item && item.height) || 1));
+        const captureId = String(item && item.captureId || '');
         try {
-          const buffer = await page.screenshot({ type: 'png', clip: { x, y, width: cw, height: ch }, captureBeyondViewport: true });
+          let buffer = null;
+          if (/^[A-Za-z0-9_-]{1,80}$/.test(captureId)) {
+            const handle = await page.$(`[data-html2figma-capture="${captureId}"]`);
+            if (handle) {
+              const box = await handle.boundingBox();
+              if (box && box.width > .5 && box.height > .5) buffer = await handle.screenshot({ type: 'png' });
+              await handle.dispose().catch(() => {});
+            }
+          }
+          if (!buffer) {
+            const x = Math.max(0, Math.min(width - 1, Number(item && item.x) || 0));
+            const y = Math.max(0, Math.min(snapshot.height - 1, Number(item && item.y) || 0));
+            const cw = Math.max(1, Math.min(4096, width - x, Number(item && item.width) || 1));
+            const ch = Math.max(1, Math.min(4096, snapshot.height - y, Number(item && item.height) || 1));
+            buffer = await page.screenshot({ type: 'png', clip: { x, y, width: cw, height: ch }, captureBeyondViewport: true });
+          }
           captures.push({ id, dataBase64: Buffer.from(buffer).toString('base64') });
         } catch (error) {
           captures.push({ id, error: error && error.message ? error.message : 'Не удалось снять fallback' });
