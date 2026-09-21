@@ -152,6 +152,54 @@ const coreModule = compilePatchedModule(corePath, source => {
 ${marker}`;
 
   let patched = source.replace(marker, preflight);
+
+  // v17 deliberately uses Tilda-centric section roots. Elementor builds its
+  // visual page from top-level e-con / top-section nodes nested below the
+  // Elementor root, so v17 collapses the whole page into one or two giant
+  // sections. Patch only the in-memory Elementor snapshot path; the original
+  // Tilda selector and section ownership logic remain byte-for-byte active for
+  // every non-Elementor page.
+  const sectionLoop = "      for (const e of doc.querySelectorAll('#allrecords > .t-rec,.t-rec[id],header,main > section,footer')) {";
+  if (!patched.includes(sectionLoop)) throw new Error('render17 section loop marker not found');
+  patched = patched.replace(sectionLoop, String.raw`      const elementorSnapshot = !!(
+        (doc.body && doc.body.classList && doc.body.classList.contains('elementor-page')) ||
+        doc.querySelector('[data-elementor-id],.elementor')
+      );
+      const sectionCandidates = elementorSnapshot
+        ? (() => {
+            const raw = Array.from(doc.querySelectorAll([
+              '[data-elementor-type="header"]',
+              'header',
+              '.elementor[data-elementor-id] > .e-con.e-parent',
+              '.elementor[data-elementor-id] > .elementor-element.e-con',
+              '.elementor[data-elementor-id] > .elementor-top-section',
+              '.elementor[data-elementor-id] > .elementor-section.elementor-top-section',
+              'main > .e-con.e-parent',
+              'main > .elementor-section',
+              '[data-elementor-type="footer"]',
+              'footer'
+            ].join(',')));
+            const candidateSet = new Set(raw);
+            return raw.filter(el => {
+              // Keep only the outermost matching Elementor visual region.
+              // A nested e-con must stay a layer inside its section rather than
+              // becoming another page section.
+              for (let p = el.parentElement; p && p !== doc.body; p = p.parentElement) {
+                if (candidateSet.has(p) && !p.matches('header,footer,[data-elementor-type="header"],[data-elementor-type="footer"]')) return false;
+              }
+              return true;
+            }).sort((a, b) => {
+              const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+              return (ar.top + win.scrollY) - (br.top + win.scrollY) || ar.left - br.left;
+            });
+          })()
+        : Array.from(doc.querySelectorAll('#allrecords > .t-rec,.t-rec[id],header,main > section,footer'));
+      for (const e of sectionCandidates) {`);
+
+  const sectionOwner = "        const c = e.closest ? e.closest('.t-rec,header,section,footer') : null;";
+  if (!patched.includes(sectionOwner)) throw new Error('render17 section owner marker not found');
+  patched = patched.replace(sectionOwner, "        const c = e.closest ? e.closest(elementorSnapshot ? '.e-con.e-parent,.elementor-top-section,.elementor-section.elementor-top-section,[data-elementor-type=\"header\"],[data-elementor-type=\"footer\"],header,footer' : '.t-rec,header,section,footer') : null;");
+
   const snapshotMarker = "    if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');";
   if (!patched.includes(snapshotMarker)) throw new Error('render17 snapshot marker not found');
   patched = patched.replace(
