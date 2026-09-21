@@ -1,1 +1,1 @@
-module.exports = require('../lib/render23');
+module.exports = require('../lib/render24');
