@@ -1,2 +1,692 @@
-const zlib=require('node:zlib');
-eval(zlib.gunzipSync(Buffer.from('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','base64')).toString('utf8'));
+const dns = require('node:dns').promises;
+const net = require('node:net');
+
+const MAX_LAYERS = 3600;
+const MAX_HEIGHT = 60000;
+const NAV_TIMEOUT = 18000;
+const VIEWPORT_HEIGHT = 1100;
+
+function cors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  res.setHeader('Cache-Control', 'no-store');
+}
+
+function isPrivateV4(ip) {
+  const p = String(ip || '').split('.').map(Number);
+  if (p.length !== 4 || p.some(x => !Number.isInteger(x) || x < 0 || x > 255)) return true;
+  const [a, b] = p;
+  return a === 0 || a === 10 || a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) || a >= 224;
+}
+function isPrivateV6(ip) {
+  const s = String(ip || '').toLowerCase().split('%')[0];
+  if (s === '::' || s === '::1' || s.startsWith('fc') || s.startsWith('fd') || /^fe[89ab]/.test(s)) return true;
+  if (s.startsWith('::ffff:')) {
+    const v4 = s.slice(7);
+    return net.isIP(v4) === 4 ? isPrivateV4(v4) : true;
+  }
+  return false;
+}
+function isPrivateIp(ip) {
+  const t = net.isIP(ip);
+  return t === 4 ? isPrivateV4(ip) : t === 6 ? isPrivateV6(ip) : true;
+}
+
+const dnsCache = new Map();
+async function hostIsPublic(hostname) {
+  const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return false;
+  if (net.isIP(host)) return !isPrivateIp(host);
+  if (dnsCache.has(host)) return dnsCache.get(host);
+  const p = Promise.race([
+    Promise.all([
+      dns.resolve4(host).catch(() => []),
+      dns.resolve6(host).catch(() => []),
+    ]).then(([a, b]) => {
+      const all = [...a, ...b];
+      return all.length > 0 && !all.some(isPrivateIp);
+    }),
+    new Promise(resolve => setTimeout(() => resolve(false), 2200)),
+  ]);
+  dnsCache.set(host, p);
+  return p;
+}
+async function assertPublicUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { throw new Error('Некорректный URL'); }
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Разрешены только http/https ссылки');
+  if (u.username || u.password) throw new Error('URL с логином/паролем не поддерживаются');
+  if (!(await hostIsPublic(u.hostname))) throw new Error('Адрес сайта не является публичным');
+  return u;
+}
+
+async function modules() {
+  try {
+    const [p, c] = await Promise.all([import('puppeteer-core'), import('@sparticuz/chromium')]);
+    return { puppeteer: p.default || p, chromium: c.default || c };
+  } catch (e) {
+    throw new Error(`Не удалось загрузить Chromium-модули: ${e && e.message ? e.message : e}`);
+  }
+}
+
+async function safeContinue(req) {
+  try {
+    if (!req.isInterceptResolutionHandled()) await req.continue();
+  } catch {}
+}
+async function safeAbort(req) {
+  try {
+    if (!req.isInterceptResolutionHandled()) await req.abort('blockedbyclient');
+  } catch {}
+}
+
+async function renderPage(rawUrl, width, options = {}) {
+  let stage = 'проверка адреса';
+  const safe = await assertPublicUrl(rawUrl);
+  const { puppeteer, chromium } = await modules();
+  chromium.setGraphicsMode = false;
+  let browser;
+  try {
+    stage = 'запуск Chromium';
+    browser = await puppeteer.launch({
+      args: [...chromium.args, '--disable-dev-shm-usage', '--disable-background-timer-throttling'],
+      executablePath: await chromium.executablePath(),
+      headless: 'shell',
+      defaultViewport: { width, height: VIEWPORT_HEIGHT, deviceScaleFactor: 1 },
+    });
+
+    const page = await browser.newPage();
+    await page.setViewport({ width, height: VIEWPORT_HEIGHT, deviceScaleFactor: 1 });
+    await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36');
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.7' });
+
+    stage = 'сетевые запросы';
+    await page.setRequestInterception(true);
+    page.on('request', async req => {
+      try {
+        const url = req.url();
+        const type = req.resourceType();
+        if (/^(data:|blob:|about:)/i.test(url)) return await safeContinue(req);
+        if (!/^https?:/i.test(url) || ['media', 'websocket', 'eventsource'].includes(type)) return await safeAbort(req);
+        const u = new URL(url);
+        if (net.isIP(u.hostname) && isPrivateIp(u.hostname)) return await safeAbort(req);
+        if (u.hostname === 'localhost' || u.hostname.endsWith('.localhost') || u.hostname.endsWith('.local')) return await safeAbort(req);
+        return await safeContinue(req);
+      } catch {
+        return await safeAbort(req);
+      }
+    });
+
+    stage = 'открытие страницы';
+    await page.goto(safe.href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
+
+    const prepare = async () => page.evaluate(() => {
+      const hide = el => {
+        if (!el || !el.style) return;
+        el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('visibility', 'hidden', 'important');
+        el.style.setProperty('opacity', '0', 'important');
+        el.setAttribute('aria-hidden', 'true');
+      };
+      const show = el => {
+        if (!el || !el.style) return;
+        el.style.removeProperty('display');
+        el.style.setProperty('visibility', 'visible', 'important');
+        el.style.setProperty('opacity', '1', 'important');
+        el.setAttribute('aria-hidden', 'false');
+      };
+      const fullTilda = raw => {
+        if (!raw) return raw;
+        let u;
+        try { u = new URL(raw, location.href); } catch { return raw; }
+        if (/^(thb|optim)\.tildacdn\.com$/i.test(u.hostname)) {
+          u.hostname = 'static.tildacdn.com';
+          u.pathname = u.pathname
+            .replace(/\/-\/(?:resize|format|quality|scale_crop|cover)\/[^/]+/gi, '')
+            .replace(/\/+/g, '/');
+        }
+        return u.href;
+      };
+
+      const clipRectFor = root => {
+        let n = root && root.parentElement;
+        for (let i = 0; n && i < 6; i++, n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          const ox = String(cs.overflowX || cs.overflow || '').toLowerCase();
+          const oy = String(cs.overflowY || cs.overflow || '').toLowerCase();
+          if (['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy)) return n.getBoundingClientRect();
+        }
+        return (root && root.parentElement ? root.parentElement : root).getBoundingClientRect();
+      };
+      const isVis = (el, clip) => {
+        if (!el) return false;
+        const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+        if (r.width <= .5 || r.height <= .5 || cs.display === 'none' || cs.visibility === 'hidden' || Number.parseFloat(cs.opacity || '1') <= .01) return false;
+        if (!clip) return true;
+        return r.right > clip.left + 1 && r.left < clip.right - 1 && r.bottom > clip.top + 1 && r.top < clip.bottom - 1;
+      };
+      const distinctVisible = (items, clip) => {
+        const out = [];
+        for (const el of items) {
+          if (!isVis(el, clip)) continue;
+          const r = el.getBoundingClientRect();
+          const duplicate = out.some(x => {
+            const q = x.getBoundingClientRect();
+            const ix = Math.max(0, Math.min(r.right, q.right) - Math.max(r.left, q.left));
+            const iy = Math.max(0, Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top));
+            const inter = ix * iy, base = Math.max(1, Math.min(r.width * r.height, q.width * q.height));
+            return inter / base > .82;
+          });
+          if (!duplicate) out.push(el);
+          if (out.length >= 6) break;
+        }
+        return out;
+      };
+      const lockItems = (root, items, active) => {
+        let keep = items.filter(el => el.getAttribute('data-html2figma-keep') === '1');
+        if (!keep.length) {
+          const activeItems = items.filter(el =>
+            el.classList.contains(active) ||
+            el.classList.contains('slick-active') ||
+            el.classList.contains('swiper-slide-visible') ||
+            (el.classList.contains('owl-item') && el.classList.contains('active')) ||
+            el.getAttribute('aria-hidden') === 'false'
+          );
+          const clip = clipRectFor(root);
+          keep = activeItems.filter(el => isVis(el, clip));
+          if (!keep.length) keep = distinctVisible(items, clip);
+          if (!keep.length) keep = [items[0]];
+          keep = keep.slice(0, 6);
+          const set = new Set(keep);
+          items.forEach(el => {
+            el.setAttribute(set.has(el) ? 'data-html2figma-keep' : 'data-html2figma-hide', '1');
+            el.removeAttribute(set.has(el) ? 'data-html2figma-hide' : 'data-html2figma-keep');
+          });
+        }
+        const set = new Set(keep);
+        items.forEach(el => {
+          el.classList.remove(active);
+          if (set.has(el)) {
+            el.classList.add(active);
+            show(el);
+          } else hide(el);
+        });
+        if (root && root.style) root.style.setProperty('transform', getComputedStyle(root).transform, 'important');
+      };
+
+      const defs = [
+        ['.t-slds__items-wrapper', '.t-slds__item', 't-slds__item_active'],
+        ['.t-slds__container', '.t-slds__item', 't-slds__item_active'],
+        ['.t-carousel__inner', '.t-carousel__item', 't-carousel__item_active'],
+        ['.swiper-wrapper', '.swiper-slide', 'swiper-slide-active'],
+        ['.slick-track', '.slick-slide', 'slick-active'],
+        ['.owl-stage', '.owl-item', 'active'],
+      ];
+      for (const [rootSel, itemSel, active] of defs) {
+        for (const root of document.querySelectorAll(rootSel)) {
+          let items = Array.from(root.querySelectorAll(':scope > ' + itemSel));
+          if (!items.length) items = Array.from(root.querySelectorAll(itemSel));
+          items = items.filter(el =>
+            !el.classList.contains('slick-cloned') &&
+            !el.classList.contains('swiper-slide-duplicate') &&
+            el.getAttribute('data-clone') !== 'true'
+          );
+          if (items.length < 2) continue;
+          lockItems(root, items, active);
+        }
+      }
+      const groups = new Map();
+      for (const el of document.querySelectorAll('[data-slide-index]')) {
+        const p = el.parentElement;
+        if (!p) continue;
+        if (!groups.has(p)) groups.set(p, []);
+        groups.get(p).push(el);
+      }
+      for (const [root, arrRaw] of groups.entries()) {
+        if (arrRaw.length < 2) continue;
+        const arr = arrRaw.slice().sort((a, b) => Number(a.getAttribute('data-slide-index') || 0) - Number(b.getAttribute('data-slide-index') || 0));
+        lockItems(root, arr, 'html2figma-active');
+      }
+      document.querySelectorAll('.slick-cloned,.swiper-slide-duplicate,[data-clone="true"]').forEach(hide);
+
+      for (const img of document.querySelectorAll('img')) {
+        const full = img.getAttribute('data-original') || img.getAttribute('data-zoom-target') || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-lazy');
+        if (full) img.src = fullTilda(full);
+        const ss = img.getAttribute('data-srcset') || img.getAttribute('data-lazy-srcset');
+        if (ss) img.setAttribute('srcset', ss);
+        try { img.loading = 'eager'; } catch {}
+        try { img.decoding = 'sync'; } catch {}
+      }
+      for (const src of document.querySelectorAll('source[data-srcset],source[data-lazy-srcset]')) {
+        const v = src.getAttribute('data-srcset') || src.getAttribute('data-lazy-srcset');
+        if (v) src.setAttribute('srcset', v);
+      }
+      for (const el of document.querySelectorAll('[data-original],[data-bg],[data-background-image],[data-lazy-bg]')) {
+        if (el.tagName === 'IMG') continue;
+        const raw = el.getAttribute('data-original') || el.getAttribute('data-bg') || el.getAttribute('data-background-image') || el.getAttribute('data-lazy-bg');
+        if (!raw) continue;
+        const u = fullTilda(raw);
+        const cs = getComputedStyle(el);
+        if (!cs.backgroundImage || cs.backgroundImage === 'none' || /resize\/20x/i.test(cs.backgroundImage) || /thb\.tildacdn\.com/i.test(cs.backgroundImage)) {
+          el.style.setProperty('background-image', `url("${String(u).replace(/"/g, '')}")`, 'important');
+        }
+      }
+      try { for (const a of document.getAnimations ? document.getAnimations() : []) a.pause(); } catch {}
+    });
+
+    stage = 'первое состояние';
+    await prepare();
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}[data-html2figma-hide="1"]{display:none!important;visibility:hidden!important;opacity:0!important}' }).catch(() => {});
+
+    stage = 'инициализация после фиксации';
+    await Promise.race([
+      page.waitForNetworkIdle({ idleTime: 300, timeout: 2500 }).catch(() => {}),
+      new Promise(r => setTimeout(r, 2500)),
+    ]);
+    await Promise.race([
+      page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {}),
+      new Promise(r => setTimeout(r, 1800)),
+    ]);
+    await prepare();
+
+    stage = 'lazy-load';
+    await page.evaluate(async max => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const root = document.scrollingElement || document.documentElement;
+      const total = Math.min(max, Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0, 1));
+      for (let y = 0; y < total; y += 850) {
+        window.scrollTo(0, y);
+        await sleep(90);
+      }
+      window.scrollTo(0, 0);
+      await sleep(350);
+      const pending = Array.from(document.images || []).filter(i => !i.complete);
+      await Promise.race([
+        Promise.all(pending.slice(0, 600).map(i => new Promise(done => {
+          i.addEventListener('load', done, { once: true });
+          i.addEventListener('error', done, { once: true });
+        }))),
+        sleep(6000),
+      ]);
+      try {
+        if (document.fonts && document.fonts.ready) await Promise.race([document.fonts.ready, sleep(2200)]);
+      } catch {}
+    }, MAX_HEIGHT);
+
+    stage = 'повторная фиксация';
+    await prepare();
+    await new Promise(r => setTimeout(r, 250));
+
+    stage = 'снятие геометрии';
+    const snapshot = await page.evaluate(({ maxLayers, maxHeight, viewportWidth }) => {
+      const win = window, doc = document, layers = [];
+      let seq = 0, truncated = false, containerSeq = 0;
+      const emitted = new Set(), semantic = new Map(), absBoxes = new Map(), imageCaptureIds = new Map(), bgCaptureIds = new Map();
+      let imageCaptureSeq = 0, bgCaptureSeq = 0;
+      for (const img of Array.from(doc.images || [])) {
+        const captureId = 'imgcap-' + (imageCaptureSeq++);
+        imageCaptureIds.set(img, captureId);
+        try { img.setAttribute('data-html2figma-capture', captureId); } catch {}
+      }
+      const bgCaptureId = el => {
+        if (!el || !(el instanceof HTMLElement)) return undefined;
+        if (bgCaptureIds.has(el)) return bgCaptureIds.get(el);
+        const id = 'bgcap-' + (bgCaptureSeq++);
+        bgCaptureIds.set(el, id);
+        try { el.setAttribute('data-html2figma-bg-capture', id); } catch {}
+        return id;
+      };
+      const num = (v, f = 0) => { const n = Number.parseFloat(v); return Number.isFinite(n) ? n : f; };
+      const round = v => Math.round(v * 100) / 100;
+      const color = v => {
+        const m = String(v || '').match(/rgba?\(([^)]+)\)/i);
+        if (!m) return { r: 0, g: 0, b: 0, a: 0 };
+        const p = m[1].split(',').map(x => Number.parseFloat(x.trim()));
+        return { r: Math.max(0, Math.min(1, (p[0] || 0) / 255)), g: Math.max(0, Math.min(1, (p[1] || 0) / 255)), b: Math.max(0, Math.min(1, (p[2] || 0) / 255)), a: p.length > 3 && Number.isFinite(p[3]) ? Math.max(0, Math.min(1, p[3])) : 1 };
+      };
+      const rect = r => ({ x: round(r.left + win.scrollX), y: round(r.top + win.scrollY), width: round(r.width), height: round(r.height) });
+      const name = (e, s = '') => ((e.tagName || 'node').toLowerCase() + (e.id ? '#' + e.id : '') + (e.classList && e.classList.length ? '.' + Array.from(e.classList).slice(0, 2).join('.') : '') + s).slice(0, 100);
+      const fullTilda = raw => {
+        if (!raw) return raw;
+        let u;
+        try { u = new URL(raw, location.href); } catch { return raw; }
+        if (/^(thb|optim)\.tildacdn\.com$/i.test(u.hostname)) {
+          u.hostname = 'static.tildacdn.com';
+          u.pathname = u.pathname.replace(/\/-\/(?:resize|format|quality|scale_crop|cover)\/[^/]+/gi, '').replace(/\/+/g, '/');
+        }
+        return u.href;
+      };
+      const urls = v => Array.from(new Set(Array.from(String(v || '').matchAll(/url\((?:"|')?([^"')]+)(?:"|')?\)/gi)).map(m => fullTilda(m[1]))));
+      const radius = s => Math.max(num(s.borderTopLeftRadius), num(s.borderTopRightRadius), num(s.borderBottomLeftRadius), num(s.borderBottomRightRadius));
+      const borderWidth = s => Math.max(num(s.borderTopWidth), num(s.borderRightWidth), num(s.borderBottomWidth), num(s.borderLeftWidth));
+      const shadow = v => {
+        const raw = String(v || '');
+        if (!raw || raw === 'none' || raw.includes('inset')) return null;
+        const cm = raw.match(/rgba?\([^)]*\)/i), ns = raw.replace(cm ? cm[0] : '', '').match(/-?[\d.]+px/g) || [];
+        if (ns.length < 2) return null;
+        return { color: color(cm ? cm[0] : 'rgba(0,0,0,.2)'), x: num(ns[0]), y: num(ns[1]), blur: num(ns[2]), spread: num(ns[3]) };
+      };
+      const gradient = v => {
+        const raw = String(v || '');
+        if (!raw.includes('linear-gradient(')) return null;
+        const cs = Array.from(raw.matchAll(/rgba?\([^)]*\)/gi)).map(m => color(m[0]));
+        if (cs.length < 2) return null;
+        const am = raw.match(/linear-gradient\(\s*(-?[\d.]+)deg/i);
+        return { kind: 'linear', angle: am ? num(am[1], 180) : 180, stops: cs.slice(0, 8).map((c, i, a) => ({ position: i / Math.max(1, a.length - 1), color: c })) };
+      };
+      const fill = s => gradient(s.backgroundImage) || (color(s.backgroundColor).a > .01 ? { kind: 'solid', color: color(s.backgroundColor) } : undefined);
+      const zIndex = s => { const z = Number.parseInt(s.zIndex, 10); return Number.isFinite(z) ? z : 0; };
+      const visible = (e, r, s) => {
+        if (r.width <= .5 || r.height <= .5 || s.display === 'none' || s.visibility === 'hidden' || num(s.opacity, 1) <= .01) return false;
+        let n = e;
+        for (let i = 0; n && n !== doc.documentElement && i < 30; i++, n = n.parentElement) {
+          if (n.hidden || n.getAttribute('aria-hidden') === 'true') return false;
+          const cs = win.getComputedStyle(n);
+          if (cs.display === 'none' || cs.visibility === 'hidden' || num(cs.opacity, 1) <= .01) return false;
+          const nr = n.getBoundingClientRect();
+          if (cs.position === 'fixed' && (nr.right <= 0 || nr.left >= win.innerWidth || nr.bottom <= 0 || nr.top >= win.innerHeight)) return false;
+          if (n !== e) {
+            const ox = String(cs.overflowX || cs.overflow || '').toLowerCase(), oy = String(cs.overflowY || cs.overflow || '').toLowerCase();
+            if (['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy)) {
+              const pr = n.getBoundingClientRect();
+              if (['hidden', 'clip'].includes(ox) && (r.right <= pr.left || r.left >= pr.right)) return false;
+              if (['hidden', 'clip'].includes(oy) && (r.bottom <= pr.top || r.top >= pr.bottom)) return false;
+            }
+          }
+        }
+        return true;
+      };
+      const dedupe = l => [l.kind, l.containerKey || '', l.parentContainerKey || '', round(l.absX ?? l.x), round(l.absY ?? l.y), round(l.width), round(l.height), l.text || '', l.url || '', l.fill && l.fill.kind === 'solid' ? JSON.stringify(l.fill.color) : ''].join('|');
+      const add = l => {
+        if (layers.length >= maxLayers) { truncated = true; return false; }
+        if (!l || !Number.isFinite(l.x) || !Number.isFinite(l.y) || l.width <= .5 || l.height <= .5) return true;
+        const k = dedupe(l);
+        if (emitted.has(k)) return true;
+        emitted.add(k);
+        l.z = seq++;
+        layers.push(l);
+        return true;
+      };
+
+      const sections = [], sectionEls = [], seen = new Set();
+      for (const e of doc.querySelectorAll('#allrecords > .t-rec,.t-rec[id],header,main > section,footer')) {
+        if (seen.has(e)) continue;
+        const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
+        if (!visible(e, r, s)) continue;
+        seen.add(e); sectionEls.push(e);
+      }
+      if (!sectionEls.length && doc.body) for (const e of doc.body.children) {
+        const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
+        if (visible(e, r, s)) sectionEls.push(e);
+      }
+      const sectionMap = new Map();
+      sectionEls.forEach((e, i) => {
+        const r = e.getBoundingClientRect(), s = win.getComputedStyle(e), id = 'section-' + i;
+        sectionMap.set(e, id);
+        const ox = String(s.overflowX || s.overflow || '').toLowerCase(), oy = String(s.overflowY || s.overflow || '').toLowerCase();
+        const secX = round(r.left + win.scrollX), secY = round(r.top + win.scrollY), secW = Math.max(1, round(r.width)), secH = Math.max(1, round(r.height));
+        sections.push({ id, name: (e.id || (e.classList && e.classList[0]) || e.tagName.toLowerCase()).slice(0, 90), y: secY, height: secH, clipsContent: ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy) });
+        const sf = fill(s);
+        if (sf) add({ kind: 'shape', name: 'section background', x: secX, y: secY, absX: secX, absY: secY, width: secW, height: secH, opacity: num(s.opacity, 1), fill: sf, sectionId: id, zIndex: -100000, paintPhase: -100 });
+        const sbg = urls(s.backgroundImage), secBgCap = sbg.length ? bgCaptureId(e) : undefined;
+        const secBgSize = String(s.backgroundSize || 'cover'), secBgPos = String(s.backgroundPosition || '50% 50%'), secBgRepeat = String(s.backgroundRepeat || 'repeat');
+        const secPreferCapture = sbg.length > 0 && (!/^(cover|contain)(\s*,\s*(cover|contain))*$/i.test(secBgSize.trim()) || !/^(50%|center)\s+(50%|center)$/i.test(secBgPos.trim()) || !/^no-repeat(?:\s*,\s*no-repeat)*$/i.test(secBgRepeat.trim()));
+        for (const u of sbg.slice(0, 3)) add({ kind: 'image', name: 'section background image', x: secX, y: secY, absX: secX, absY: secY, width: secW, height: secH, opacity: num(s.opacity, 1), url: u, sourceUrl: u, imageScaleMode: secBgSize.includes('contain') ? 'FIT' : 'FILL', backgroundPosition: secBgPos, backgroundSize: secBgSize, sectionId: id, zIndex: -99999, paintPhase: -99, captureSafe: true, captureId: secBgCap, captureMode: 'background', preferCapture: secPreferCapture });
+      });
+      const sectionFor = (e, r) => {
+        const c = e.closest ? e.closest('.t-rec,header,section,footer') : null;
+        if (c && sectionMap.has(c)) return sectionMap.get(c);
+        const y = r.top + win.scrollY + Math.min(8, r.height / 2), hit = sections.find(s => y >= s.y - 2 && y <= s.y + s.height + 2);
+        return hit ? hit.id : (sections[0] ? sections[0].id : undefined);
+      };
+
+      const candidates = Array.from(doc.querySelectorAll('body *')).filter(e => e instanceof HTMLElement || e instanceof SVGElement);
+      const hasVisual = s => color(s.backgroundColor).a > .01 || urls(s.backgroundImage).length || !!gradient(s.backgroundImage) || borderWidth(s) > .1 || !!shadow(s.boxShadow);
+      for (const e of candidates) {
+        if (!(e instanceof HTMLElement)) continue;
+        const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
+        if (!visible(e, r, s) || e === doc.body || e === doc.documentElement || e.matches('.t-rec,#allrecords') || sectionMap.has(e)) continue;
+        const ox = String(s.overflowX || s.overflow || '').toLowerCase(), oy = String(s.overflowY || s.overflow || '').toLowerCase();
+        const clipper = ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy);
+        const button = e.matches('button,[role="button"],.t-btn,.btn,.button,a[class*="btn"],a[class*="button"]'), visual = hasVisual(s), desc = e.querySelectorAll ? e.querySelectorAll('*').length : 0, content = (e.innerText || '').trim().length > 0 || !!e.querySelector('img,svg,picture'), modest = r.width <= 1200 && r.height <= 1200 && r.width >= 18 && r.height >= 14, structuralClip = clipper && r.width >= 2 && r.height >= 2 && r.width <= viewportWidth * 1.5 && r.height <= 5000;
+        if (button || structuralClip || (s.display.includes('flex') && modest && content) || (visual && modest && content && desc <= 120)) {
+          const key = 'container-' + (++containerSeq);
+          semantic.set(e, key); absBoxes.set(key, rect(r));
+        }
+      }
+      const nearest = e => {
+        let n = e.parentElement;
+        for (let i = 0; n && n !== doc.body && i < 30; i++, n = n.parentElement) if (semantic.has(n)) return semantic.get(n);
+      };
+      const relative = (b, key) => {
+        if (!key) return b;
+        const p = absBoxes.get(key);
+        return p ? { ...b, x: round(b.x - p.x), y: round(b.y - p.y) } : b;
+      };
+
+      const textOwner = node => {
+        let e = node.parentElement;
+        for (let i = 0; e && e !== doc.body && i < 20; i++, e = e.parentElement) {
+          if (!(e instanceof HTMLElement)) continue;
+          const tag = e.tagName;
+          if (tag === 'A') {
+            const p = e.parentElement && e.parentElement.closest ? e.parentElement.closest('p,li,label,h1,h2,h3,h4,h5,h6,td,th,.tn-atom,.t-title,.t-name,.t-descr,.t-text') : null;
+            if (!p) return e;
+          } else if (/^(H[1-6]|P|LI|LABEL|BUTTON|TD|TH)$/.test(tag) || e.matches('.tn-atom,.t-title,.t-name,.t-descr,.t-text,.t-btn,[role="button"]')) return e;
+          const cs = win.getComputedStyle(e);
+          if (['block', 'flex', 'grid', 'list-item', 'table-cell'].includes(cs.display) && ((e.innerText || '').trim().length > 0)) return e;
+        }
+        return node.parentElement;
+      };
+      const textGroups = new Map();
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+      let tn;
+      while ((tn = walker.nextNode())) {
+        if (!tn.nodeValue || !tn.nodeValue.trim()) continue;
+        const pe = tn.parentElement;
+        if (!pe || pe.closest('script,style,noscript,svg') || !visible(pe, pe.getBoundingClientRect(), win.getComputedStyle(pe))) continue;
+        const owner = textOwner(tn);
+        if (!owner) continue;
+        const os = win.getComputedStyle(owner), or = owner.getBoundingClientRect();
+        if (!visible(owner, or, os)) continue;
+        if (!textGroups.has(owner)) textGroups.set(owner, []);
+        textGroups.get(owner).push(tn);
+      }
+      function visualText(owner, nodes) {
+        const words = []; let order = 0;
+        for (const node of nodes) {
+          const raw = node.nodeValue || '';
+          for (const m of raw.matchAll(/\S+/g)) {
+            const start = m.index || 0, end = start + m[0].length;
+            const rg = doc.createRange();
+            try { rg.setStart(node, start); rg.setEnd(node, end); } catch { continue; }
+            const r = rg.getBoundingClientRect();
+            if (r.width > .2 && r.height > .2) words.push({ t: m[0], x: r.left + win.scrollX, y: r.top + win.scrollY, w: r.width, h: r.height, o: order++ });
+          }
+        }
+        if (!words.length) return null;
+        words.sort((a, b) => Math.abs(a.y - b.y) > 1.5 ? a.y - b.y : a.x - b.x || a.o - b.o);
+        const lines = [];
+        for (const w of words) {
+          let line = lines.find(l => Math.abs(l.y - w.y) < Math.max(2, w.h * .35));
+          if (!line) { line = { y: w.y, items: [] }; lines.push(line); }
+          line.items.push(w);
+        }
+        lines.sort((a, b) => a.y - b.y);
+        const text = lines.map(l => l.items.sort((a, b) => a.x - b.x || a.o - b.o).map(x => x.t).join(' ')).join('\n');
+        const minX = Math.min(...words.map(w => w.x)), minY = Math.min(...words.map(w => w.y)), maxX = Math.max(...words.map(w => w.x + w.w)), maxY = Math.max(...words.map(w => w.y + w.h));
+        return { text, x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY), lineCount: lines.length };
+      }
+
+      for (const e of candidates) {
+        if (truncated) break;
+        const s = win.getComputedStyle(e), r = e.getBoundingClientRect();
+        if (!visible(e, r, s) || (e instanceof SVGElement && e.tagName.toLowerCase() !== 'svg')) continue;
+        const abs = rect(r), sectionId = sectionFor(e, r), parentKey = nearest(e), ownKey = semantic.get(e), base = relative(abs, parentKey), opacity = num(s.opacity, 1), rad = radius(s), zi = zIndex(s);
+        if (ownKey) {
+          const ox = String(s.overflowX || s.overflow || '').toLowerCase(), oy = String(s.overflowY || s.overflow || '').toLowerCase();
+          add({ kind: 'container', name: name(e, e.matches('button,[role="button"],.t-btn,.btn,.button,a[class*="btn"],a[class*="button"]') ? ' — кнопка' : ' — контейнер'), ...base, absX: abs.x, absY: abs.y, opacity, fill: fill(s), stroke: borderWidth(s) > .1 ? color(s.borderTopColor) : undefined, strokeWeight: borderWidth(s) || undefined, radius: rad || undefined, shadow: shadow(s.boxShadow) || undefined, sectionId, containerKey: ownKey, parentContainerKey: parentKey, layoutRole: s.display.includes('flex') && s.flexWrap === 'nowrap' && !s.flexDirection.endsWith('reverse') ? 'FLOW' : 'ABSOLUTE', layoutDirection: s.flexDirection.startsWith('row') ? 'HORIZONTAL' : 'VERTICAL', itemSpacing: num(s.flexDirection.startsWith('row') ? s.columnGap : s.rowGap), paddingTop: num(s.paddingTop), paddingRight: num(s.paddingRight), paddingBottom: num(s.paddingBottom), paddingLeft: num(s.paddingLeft), clipsContent: ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy), zIndex: zi, paintPhase: 1 });
+        }
+        const childParent = ownKey || parentKey;
+        if (e instanceof SVGElement && e.tagName.toLowerCase() === 'svg' && !e.closest('svg svg')) {
+          add({ kind: 'svg', name: name(e), ...relative(abs, parentKey), absX: abs.x, absY: abs.y, opacity, svg: e.outerHTML.slice(0, 180000), sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 2 });
+          continue;
+        }
+        if (e.tagName === 'IMG') {
+          const originalRaw = e.getAttribute('data-original') || e.getAttribute('data-zoom-target') || e.getAttribute('data-src') || e.getAttribute('data-lazy-src') || '';
+          const currentRaw = e.currentSrc || e.getAttribute('src') || '';
+          const raw = originalRaw || currentRaw;
+          if (raw) {
+            const u = fullTilda(raw), source = fullTilda(currentRaw || raw);
+            add({ kind: 'image', name: name(e), ...relative(abs, parentKey), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: source, radius: rad || undefined, imageScaleMode: String(s.objectFit || '').toLowerCase() === 'contain' ? 'FIT' : 'FILL', objectPosition: String(s.objectPosition || '50% 50%'), sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 2, captureSafe: true, captureId: imageCaptureIds.get(e) });
+          }
+          continue;
+        }
+        const bgUrls = urls(s.backgroundImage);
+        const bgSize = String(s.backgroundSize || 'cover'), bgPos = String(s.backgroundPosition || '50% 50%'), bgRepeat = String(s.backgroundRepeat || 'repeat'), bgCap = bgUrls.length ? bgCaptureId(e) : undefined;
+        const preferBgCapture = bgUrls.length > 0 && (!/^(cover|contain)(\s*,\s*(cover|contain))*$/i.test(bgSize.trim()) || !/^(50%|center)\s+(50%|center)$/i.test(bgPos.trim()) || !/^no-repeat(?:\s*,\s*no-repeat)*$/i.test(bgRepeat.trim()));
+        for (const u of bgUrls.slice(0, 3)) {
+          add({ kind: 'image', name: name(e, ' — фон'), ...relative(abs, childParent), absX: abs.x, absY: abs.y, opacity, url: u, sourceUrl: u, radius: rad || undefined, imageScaleMode: bgSize.includes('contain') ? 'FIT' : 'FILL', backgroundPosition: bgPos, backgroundSize: bgSize, sectionId, parentContainerKey: childParent, zIndex: zi, paintPhase: 0, captureSafe: true, captureId: bgCap, captureMode: 'background', preferCapture: preferBgCapture });
+        }
+        if (!ownKey && e !== doc.body && e !== doc.documentElement && !e.matches('#allrecords') && !sectionMap.has(e)) {
+          const f = fill(s), bw = borderWidth(s), sh = shadow(s.boxShadow);
+          if ((f || bw > .1 || sh) && !(bgUrls.length && f && f.kind !== 'linear')) add({ kind: 'shape', name: name(e, ' — плашка'), ...base, absX: abs.x, absY: abs.y, opacity, fill: f, stroke: bw > .1 ? color(s.borderTopColor) : undefined, strokeWeight: bw || undefined, radius: rad || undefined, shadow: sh || undefined, sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 0 });
+        }
+      }
+
+      for (const [owner, nodes] of textGroups.entries()) {
+        if (truncated) break;
+        const s = win.getComputedStyle(owner), r = owner.getBoundingClientRect();
+        if (!visible(owner, r, s)) continue;
+        const v = visualText(owner, nodes);
+        if (!v || !v.text) continue;
+        const sectionId = sectionFor(owner, r), ownKey = semantic.get(owner), parentKey = ownKey || nearest(owner), scale = owner.offsetWidth > 0 ? r.width / owner.offsetWidth : 1, left = (num(s.paddingLeft) + num(s.borderLeftWidth)) * scale, right = (num(s.paddingRight) + num(s.borderRightWidth)) * scale, abs = { x: round(r.left + win.scrollX + left), y: round(v.y), width: round(Math.max(v.width, r.width - left - right)), height: round(v.height) }, base = relative(abs, parentKey), fs = num(s.fontSize, 16) * scale, lh = s.lineHeight === 'normal' ? (v.lineCount > 1 ? Math.max(fs, round((v.height + fs * .25) / v.lineCount)) : fs * 1.2) : num(s.lineHeight, fs / scale * 1.2) * scale, ta = String(s.textAlign || 'left').toUpperCase();
+        add({ kind: 'text', name: name(owner, ' — текст'), ...base, absX: abs.x, absY: abs.y, opacity: num(s.opacity, 1), fill: { kind: 'solid', color: color(s.color) }, text: v.text, expectedLineCount: v.lineCount, textRole: /^H[1-6]$/.test(owner.tagName) ? owner.tagName : (owner.matches('button,.t-btn,[role="button"]') ? 'Button' : 'Body'), fontSize: fs, fontWeight: num(s.fontWeight, 400), fontFamily: String(s.fontFamily || 'Inter').split(',')[0].trim().replace(/^['"]|['"]$/g, ''), fontStyle: String(s.fontStyle || 'normal'), lineHeight: lh, letterSpacing: s.letterSpacing === 'normal' ? 0 : num(s.letterSpacing) * scale, textAlign: ta === 'CENTER' ? 'CENTER' : ta === 'RIGHT' || ta === 'END' ? 'RIGHT' : ta === 'JUSTIFY' ? 'JUSTIFIED' : 'LEFT', textDecoration: String(s.textDecorationLine || 'none'), textSizing: 'FIXED', sectionId, parentContainerKey: parentKey, zIndex: zIndex(s), paintPhase: 2 });
+      }
+
+      const root = doc.scrollingElement || doc.documentElement;
+      const height = Math.min(maxHeight, Math.max(root.scrollHeight, doc.body ? doc.body.scrollHeight : 0, 1));
+      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 14 };
+    }, { maxLayers: MAX_LAYERS, maxHeight: MAX_HEIGHT, viewportWidth: width });
+
+    if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');
+
+    const captures = [];
+    if (Array.isArray(options.captureClips) && options.captureClips.length) {
+      stage = 'fallback-снимки изображений';
+      for (const item of options.captureClips.slice(0, 48)) {
+        const id = String(item && item.id != null ? item.id : '');
+        const captureId = String(item && item.captureId || '');
+        try {
+          let buffer = null;
+          if (/^[A-Za-z0-9_-]{1,80}$/.test(captureId)) {
+            const captureMode = String(item && item.captureMode || 'element');
+            const attr = captureMode === 'background' ? 'data-html2figma-bg-capture' : 'data-html2figma-capture';
+            const handle = await page.$(`[${attr}="${captureId}"]`);
+            let cleanupId = '';
+            if (handle) {
+              if (captureMode === 'background') {
+                cleanupId = '__html2figma_bg_' + captureId;
+                await page.evaluate(({ captureId, cleanupId }) => {
+                  const st = document.createElement('style');
+                  st.id = cleanupId;
+                  st.textContent = `[data-html2figma-bg-capture="${captureId}"]{color:transparent!important;text-shadow:none!important}[data-html2figma-bg-capture="${captureId}"]>*{visibility:hidden!important}[data-html2figma-bg-capture="${captureId}"]::before,[data-html2figma-bg-capture="${captureId}"]::after{visibility:hidden!important}`;
+                  document.head.appendChild(st);
+                }, { captureId, cleanupId }).catch(() => {});
+              }
+              const box = await handle.boundingBox();
+              if (box && box.width > .5 && box.height > .5) buffer = await handle.screenshot({ type: 'png' });
+              if (cleanupId) await page.evaluate(id => { const x = document.getElementById(id); if (x) x.remove(); }, cleanupId).catch(() => {});
+              await handle.dispose().catch(() => {});
+            }
+          }
+          if (!buffer) {
+            const x = Math.max(0, Math.min(width - 1, Number(item && item.x) || 0));
+            const y = Math.max(0, Math.min(snapshot.height - 1, Number(item && item.y) || 0));
+            const cw = Math.max(1, Math.min(4096, width - x, Number(item && item.width) || 1));
+            const ch = Math.max(1, Math.min(4096, snapshot.height - y, Number(item && item.height) || 1));
+            buffer = await page.screenshot({ type: 'png', clip: { x, y, width: cw, height: ch }, captureBeyondViewport: true });
+          }
+          captures.push({ id, dataBase64: Buffer.from(buffer).toString('base64') });
+        } catch (error) {
+          captures.push({ id, error: error && error.message ? error.message : 'Не удалось снять fallback' });
+        }
+      }
+    }
+
+    let referenceBuffer = null;
+    if (options.reference === true) {
+      stage = 'контрольный снимок';
+      const refHeight = Math.max(1, Math.min(snapshot.height, 30000));
+      referenceBuffer = await page.screenshot({ type: 'webp', quality: 84, clip: { x: 0, y: 0, width, height: refHeight }, captureBeyondViewport: true });
+    }
+
+    return { finalUrl: page.url(), snapshot, captures, referenceBuffer };
+  } catch (e) {
+    throw new Error(`${stage}: ${e && e.message ? e.message : e}`);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
+module.exports = async function handler(req, res) {
+  cors(res);
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ ok: false, error: 'Разрешены только GET, POST и OPTIONS' });
+  if (req.method === 'GET' && String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'browser-renderer', version: 14, visualQa: true, clippingAncestors: true, backgroundCapture: true });
+
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  if (!body || typeof body !== 'object') body = {};
+
+  const raw = req.method === 'POST'
+    ? (Array.isArray(body.url) ? body.url[0] : body.url)
+    : (Array.isArray(req.query.url) ? req.query.url[0] : req.query.url);
+  const rawWidth = req.method === 'POST'
+    ? (Array.isArray(body.width) ? body.width[0] : body.width)
+    : (Array.isArray(req.query.width) ? req.query.width[0] : req.query.width);
+  const width = Math.max(320, Math.min(1920, Number(rawWidth) || 1440));
+  if (!raw) return res.status(400).json({ ok: false, error: 'Не передан параметр url' });
+
+  try {
+    if (req.method === 'POST' && String(body.mode || '') === 'capture-clips') {
+      const clips = Array.isArray(body.clips) ? body.clips : [];
+      const { finalUrl, captures } = await renderPage(String(raw), width, { captureClips: clips });
+      return res.status(200).json({ ok: true, mode: 'capture-clips-v1', finalUrl, captures });
+    }
+
+    const wantsReference = req.method === 'GET' && String(req.query.reference || '') === '1';
+    const { finalUrl, snapshot, referenceBuffer } = await renderPage(String(raw), width, { reference: wantsReference });
+    if (wantsReference) {
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('X-Final-Url', finalUrl);
+      res.setHeader('X-Renderer-Version', '14');
+      return res.status(200).send(referenceBuffer);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      mode: 'browser-snapshot-v14-fidelity',
+      finalUrl,
+      snapshot,
+      stats: {
+        layers: snapshot.layers.length,
+        sections: snapshot.sections.length,
+        height: snapshot.height,
+        truncated: snapshot.truncated,
+        imageLayers: snapshot.layers.filter(x => x.kind === 'image').length,
+        textLayers: snapshot.layers.filter(x => x.kind === 'text').length,
+        visualQa: true,
+      },
+    });
+  } catch (e) {
+    return res.status(502).json({ ok: false, error: e && e.message ? e.message : 'Не удалось отрендерить страницу' });
+  }
+};
