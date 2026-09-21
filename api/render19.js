@@ -40,20 +40,20 @@ function forward(result, res) {
 }
 
 function promotePaintOrder(snapshot) {
-  if (!snapshot || !Array.isArray(snapshot.layers)) return snapshot;
+  if (!snapshot || !Array.isArray(snapshot.layers)) return 0;
   let exact = 0;
   for (const layer of snapshot.layers) {
     const p = Number(layer && layer.paintOrder);
     if (!Number.isFinite(p)) continue;
-    // The published Figma importer already sorts by stackPath. Reuse that stable
-    // contract so exact Chromium paint order works without changing old projects.
+    // Existing plugin versions already sort siblings by stackPath. Feeding the
+    // exact Chromium paint order through that contract fixes cross-layer overlap
+    // without changing the user's saved plugin settings or existing frames.
     layer.stackPath = [p];
     layer.zIndex = 0;
     exact++;
   }
-  snapshot.rendererVersion = 19;
   snapshot.paintOrderLayers = exact;
-  return snapshot;
+  return exact;
 }
 
 module.exports = async function handler(req, res) {
@@ -73,10 +73,23 @@ module.exports = async function handler(req, res) {
 
   const result = await runCaptured(render18, req);
   if (result.statusCode === 200 && result.kind === 'json' && result.body && result.body.snapshot) {
-    const snapshot = promotePaintOrder(result.body.snapshot);
-    const stats = Object.assign({}, result.body.stats || {}, {
-      paintOrderLayers: snapshot.paintOrderLayers || 0,
-    });
+    const snapshot = result.body.snapshot;
+    const enriched = Number(snapshot.rendererVersion) >= 18 && snapshot.enrichment && snapshot.enrichment.paintOrder === true;
+    if (!enriched) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Точный проход Chromium v19 не завершился. Импорт остановлен, чтобы не создавать заведомо неточный макет. Повторите импорт.',
+      });
+    }
+    const exact = promotePaintOrder(snapshot);
+    if (exact <= 0) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Chromium не вернул paint order слоёв. Импорт остановлен, чтобы не нарушить порядок перекрытия элементов.',
+      });
+    }
+    snapshot.rendererVersion = 19;
+    const stats = Object.assign({}, result.body.stats || {}, { paintOrderLayers: exact });
     return res.status(200).json(Object.assign({}, result.body, {
       mode: 'browser-snapshot-v19',
       snapshot,
