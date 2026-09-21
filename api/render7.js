@@ -298,7 +298,16 @@ ${marker}
   if (!patched.includes(snapshotMarker)) throw new Error('render17 snapshot marker not found');
   patched = patched.replace(
     snapshotMarker,
-    "    if (elementorPreflight && elementorPreflight.detected) snapshot.elementorPreflight = elementorPreflight;\n" + snapshotMarker
+    String.raw`    if (elementorPreflight && elementorPreflight.detected) {
+      snapshot.elementorPreflight = elementorPreflight;
+      try {
+        const { augmentElementorSnapshot } = require('./elementor-fidelity');
+        snapshot.elementorFidelity = await augmentElementorSnapshot(page, snapshot, width);
+      } catch (error) {
+        snapshot.elementorFidelity = { error: error && error.message ? error.message : String(error) };
+      }
+    }
+` + snapshotMarker
   );
   return patched;
 });
@@ -315,7 +324,7 @@ const v22Module = compilePatchedModule(v22Path, source => {
   let patched = source.replace(marker, "    if (framework === 'elementor' && !(snapshot.elementorPreflight && snapshot.elementorPreflight.detected)) {");
   const statsMarker = '        elementorSupplementLayers: revealed.layers.length,';
   if (patched.includes(statsMarker)) {
-    patched = patched.replace(statsMarker, statsMarker + "\n        elementorPreflight: snapshot.elementorPreflight || null,");
+    patched = patched.replace(statsMarker, statsMarker + "\n        elementorPreflight: snapshot.elementorPreflight || null,\n        elementorFidelity: snapshot.elementorFidelity || null,");
   }
   return patched;
 });
