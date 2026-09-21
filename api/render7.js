@@ -3,10 +3,9 @@ const path = require('node:path');
 const Module = require('node:module');
 
 // Keep the proven Tilda/generic renderer untouched on disk. For this public
-// route we compile a narrowly patched copy of v17 in memory: the extra work is
-// gated by positive Elementor detection and runs BEFORE v17 freezes sliders
-// and extracts geometry. This avoids the old v22 strategy of trying to rebuild
-// missing Elementor fragments after the snapshot already existed.
+// route we compile a narrowly patched copy of v17 in memory. All extra work is
+// gated by positive Elementor detection, so Tilda continues through the proven
+// v17 path without Elementor geometry/reveal mutations.
 function compilePatchedModule(filename, transform) {
   const source = fs.readFileSync(filename, 'utf8');
   const patched = transform(source);
@@ -24,6 +23,34 @@ const coreModule = compilePatchedModule(corePath, source => {
   if (!source.includes(marker)) throw new Error('render17 preflight marker not found');
 
   const preflight = String.raw`    let elementorPreflight = null;
+    const reassertElementor = async phase => {
+      if (!(elementorPreflight && elementorPreflight.detected)) return null;
+      return page.evaluate(currentPhase => {
+        const stats = { phase: currentPhase, reasserted: 0, swiperActiveRestored: 0 };
+        const marked = document.querySelectorAll('[data-h2f-elementor-reveal="1"]');
+        for (const el of marked) {
+          if (!(el instanceof HTMLElement)) continue;
+          el.classList.remove('elementor-invisible');
+          el.style.setProperty('visibility', 'visible', 'important');
+          el.style.setProperty('opacity', '1', 'important');
+          el.style.setProperty('animation', 'none', 'important');
+          el.style.setProperty('animation-delay', '0s', 'important');
+          el.style.setProperty('animation-duration', '0s', 'important');
+          stats.reasserted++;
+        }
+        for (const slide of document.querySelectorAll('.swiper-slide-active,.swiper-slide-duplicate-active')) {
+          if (!(slide instanceof HTMLElement)) continue;
+          if (slide.getAttribute('aria-hidden') === 'true') slide.setAttribute('aria-hidden', 'false');
+          slide.style.setProperty('visibility', 'visible', 'important');
+          slide.style.setProperty('opacity', '1', 'important');
+          stats.swiperActiveRestored++;
+        }
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+        return stats;
+      }, phase).catch(() => null);
+    };
+
     try {
       const isElementor = await page.evaluate(() => {
         const body = document.body;
@@ -41,48 +68,95 @@ const coreModule = compilePatchedModule(corePath, source => {
           const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
           const root = document.scrollingElement || document.documentElement;
           const maxScroll = Math.min(maxHeight, Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0, 1));
+          const inElementor = el => !!(el && el.closest && el.closest('.elementor,[data-elementor-id],[data-elementor-type]'));
 
-          // First let Elementor/Swiper/IntersectionObserver see every viewport.
-          // This is intentionally done before animations are frozen by v17.
-          for (let y = 0; y < maxScroll; y += 720) {
+          // Let IntersectionObserver, Elementor entrance effects, lazy media and
+          // Swiper see every viewport before the generic renderer freezes state.
+          for (let y = 0; y < maxScroll; y += 640) {
             window.scrollTo(0, y);
             window.dispatchEvent(new Event('scroll'));
-            await sleep(105);
+            await sleep(120);
           }
           window.scrollTo(0, 0);
           window.dispatchEvent(new Event('scroll'));
           window.dispatchEvent(new Event('resize'));
-          await sleep(220);
+          await sleep(260);
 
+          let animationsFinished = 0;
+          let animationTargets = 0;
           let revealed = 0;
           let lazyResolved = 0;
-          let entranceTransformsCleared = 0;
-          const candidates = new Set(Array.from(document.querySelectorAll('.elementor-invisible')));
-          for (const el of document.querySelectorAll('[data-settings]')) {
-            const settings = String(el.getAttribute('data-settings') || '');
-            if (/[_-]?animation/i.test(settings)) candidates.add(el);
-          }
+          let swiperActiveRestored = 0;
 
-          const entranceRe = /(?:^|\s)(?:fadeIn|fadeInUp|fadeInDown|fadeInLeft|fadeInRight|zoomIn|zoomInUp|zoomInDown|zoomInLeft|zoomInRight|slideInUp|slideInDown|slideInLeft|slideInRight|bounceIn|bounceInUp|bounceInDown|bounceInLeft|bounceInRight|rotateIn|rotateInUpLeft|rotateInUpRight|rotateInDownLeft|rotateInDownRight|lightSpeedIn|rollIn|jackInTheBox)(?:\s|$)/i;
+          // Finish only finite one-shot animations whose effect target belongs
+          // to Elementor. This preserves the element's real final transform
+          // instead of blindly clearing transform on every animated node.
+          try {
+            for (const animation of document.getAnimations ? document.getAnimations() : []) {
+              const effect = animation && animation.effect;
+              const target = effect && effect.target;
+              if (!(target instanceof Element) || !inElementor(target)) continue;
+              let timing = null;
+              try { timing = effect.getComputedTiming ? effect.getComputedTiming() : null; } catch {}
+              const iterations = timing && Number.isFinite(timing.iterations) ? timing.iterations : 1;
+              const duration = timing && Number.isFinite(timing.duration) ? timing.duration : 0;
+              if (!Number.isFinite(iterations) || iterations > 3 || !Number.isFinite(duration) || duration > 15000) continue;
+              animationTargets++;
+              try {
+                animation.finish();
+                animationsFinished++;
+              } catch {
+                try {
+                  if (effect && effect.getTiming) {
+                    const raw = effect.getTiming();
+                    const end = Number(raw.delay || 0) + Number(raw.duration || 0) * Math.max(1, Number(raw.iterations || 1));
+                    if (Number.isFinite(end)) animation.currentTime = end;
+                  }
+                } catch {}
+              }
+            }
+          } catch {}
+          await sleep(80);
+
+          const candidates = new Set();
+          for (const el of document.querySelectorAll('.elementor-invisible,.animated,[data-settings],[class*="elementor-motion"],[class*="elementor-animation"]')) {
+            if (inElementor(el)) candidates.add(el);
+          }
 
           for (const el of candidates) {
             if (!(el instanceof HTMLElement)) continue;
             const cs = getComputedStyle(el);
-            const hiddenByEntrance = el.classList.contains('elementor-invisible') || cs.visibility === 'hidden' || Number.parseFloat(cs.opacity || '1') <= 0.01;
-            if (!hiddenByEntrance) continue;
-
+            const settings = String(el.getAttribute('data-settings') || '');
             const cls = String(el.className || '');
+            const entranceCandidate = el.classList.contains('elementor-invisible') ||
+              /(?:^|\s)animated(?:\s|$)/i.test(cls) ||
+              /(?:^|[_-])animation/i.test(settings) ||
+              /elementor-(?:motion|animation)/i.test(cls);
+            if (!entranceCandidate) continue;
+
+            const hidden = cs.visibility === 'hidden' || Number.parseFloat(cs.opacity || '1') <= 0.01 || el.classList.contains('elementor-invisible');
+            if (!hidden) continue;
+
             el.classList.remove('elementor-invisible');
             el.setAttribute('data-h2f-elementor-reveal', '1');
             el.style.setProperty('visibility', 'visible', 'important');
             el.style.setProperty('opacity', '1', 'important');
             el.style.setProperty('animation', 'none', 'important');
-            if (entranceRe.test(cls)) {
-              el.setAttribute('data-h2f-elementor-entrance', '1');
-              el.style.setProperty('transform', 'none', 'important');
-              entranceTransformsCleared++;
-            }
+            el.style.setProperty('animation-delay', '0s', 'important');
+            el.style.setProperty('animation-duration', '0s', 'important');
+            // Do not overwrite transform here: after animation.finish() it is
+            // either the genuine final transform or a meaningful design transform.
             revealed++;
+          }
+
+          // Preserve the actual initial/active Swiper slide only. Do not expose
+          // every slide, which would destroy carousel geometry.
+          for (const slide of document.querySelectorAll('.swiper-slide-active,.swiper-slide-duplicate-active')) {
+            if (!(slide instanceof HTMLElement) || !inElementor(slide)) continue;
+            if (slide.getAttribute('aria-hidden') === 'true') slide.setAttribute('aria-hidden', 'false');
+            slide.style.setProperty('visibility', 'visible', 'important');
+            slide.style.setProperty('opacity', '1', 'important');
+            swiperActiveRestored++;
           }
 
           for (const img of document.querySelectorAll('img')) {
@@ -128,12 +202,19 @@ const coreModule = compilePatchedModule(corePath, source => {
             style.id = '__h2f_elementor_preflight';
             document.head.appendChild(style);
           }
-          style.textContent = '[data-h2f-elementor-reveal="1"]{visibility:visible!important;opacity:1!important;animation:none!important;animation-delay:0s!important;animation-duration:0s!important}[data-h2f-elementor-entrance="1"]{transform:none!important}';
+          style.textContent = '[data-h2f-elementor-reveal="1"]{visibility:visible!important;opacity:1!important;animation:none!important;animation-delay:0s!important;animation-duration:0s!important}.swiper-slide-active[data-h2f-elementor-reveal="1"]{visibility:visible!important;opacity:1!important}';
 
           window.dispatchEvent(new Event('resize'));
           window.dispatchEvent(new Event('scroll'));
-          await sleep(280);
-          return { detected: true, revealed, lazyResolved, entranceTransformsCleared };
+          await sleep(320);
+          return {
+            detected: true,
+            animationTargets,
+            animationsFinished,
+            revealed,
+            lazyResolved,
+            swiperActiveRestored
+          };
         }, MAX_HEIGHT);
 
         await Promise.race([
@@ -149,9 +230,25 @@ const coreModule = compilePatchedModule(corePath, source => {
       elementorPreflight = { detected: true, error: error && error.message ? error.message : String(error) };
     }
 
-${marker}`;
+${marker}
+    if (elementorPreflight && elementorPreflight.detected) {
+      const afterPrepare = await reassertElementor('after-initial-prepare');
+      if (afterPrepare) elementorPreflight.afterPrepare = afterPrepare;
+    }`;
 
   let patched = source.replace(marker, preflight);
+
+  // prepare() runs again after v17's generic lazy-load sweep. Reassert only the
+  // Elementor nodes marked by the preflight so the generic slider freeze cannot
+  // hide them again. Non-Elementor pages never enter this branch.
+  const repeatPrepare = "    stage = 'повторная фиксация';\n    await prepare();";
+  if (!patched.includes(repeatPrepare)) throw new Error('render17 repeat prepare marker not found');
+  patched = patched.replace(repeatPrepare, repeatPrepare + String.raw`
+    if (elementorPreflight && elementorPreflight.detected) {
+      const afterLazyPrepare = await reassertElementor('after-lazy-prepare');
+      if (afterLazyPrepare) elementorPreflight.afterLazyPrepare = afterLazyPrepare;
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }`);
 
   // v17 deliberately uses Tilda-centric section roots. Elementor builds its
   // visual page from top-level e-con / top-section nodes nested below the
@@ -181,9 +278,6 @@ ${marker}`;
             ].join(',')));
             const candidateSet = new Set(raw);
             return raw.filter(el => {
-              // Keep only the outermost matching Elementor visual region.
-              // A nested e-con must stay a layer inside its section rather than
-              // becoming another page section.
               for (let p = el.parentElement; p && p !== doc.body; p = p.parentElement) {
                 if (candidateSet.has(p) && !p.matches('header,footer,[data-elementor-type="header"],[data-elementor-type="footer"]')) return false;
               }
