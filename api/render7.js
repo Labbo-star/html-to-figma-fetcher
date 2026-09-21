@@ -130,7 +130,8 @@ async function renderPage(rawUrl, width, options = {}) {
     const prepare = async () => page.evaluate(() => {
       const hide = el => {
         if (!el || !el.style) return;
-        el.style.setProperty('display', 'none', 'important');
+        // Keep the slide's slot in the track: display:none moves the active slide.
+        el.style.setProperty('visibility', 'hidden', 'important');
         el.style.setProperty('visibility', 'hidden', 'important');
         el.style.setProperty('opacity', '0', 'important');
         el.setAttribute('aria-hidden', 'true');
@@ -190,6 +191,8 @@ async function renderPage(rawUrl, width, options = {}) {
         return out;
       };
       const lockItems = (root, items, active) => {
+        const frozenTransform = root.getAttribute('data-html2figma-transform') || getComputedStyle(root).transform;
+        root.setAttribute('data-html2figma-transform', frozenTransform);
         let keep = items.filter(el => el.getAttribute('data-html2figma-keep') === '1');
         if (!keep.length) {
           const activeItems = items.filter(el =>
@@ -218,7 +221,7 @@ async function renderPage(rawUrl, width, options = {}) {
             show(el);
           } else hide(el);
         });
-        if (root && root.style) root.style.setProperty('transform', getComputedStyle(root).transform, 'important');
+        if (root && root.style) root.style.setProperty('transform', frozenTransform, 'important');
       };
 
       const defs = [
@@ -239,6 +242,7 @@ async function renderPage(rawUrl, width, options = {}) {
             el.getAttribute('data-clone') !== 'true'
           );
           if (items.length < 2) continue;
+          if (items.every(el => el.hasAttribute('data-html2figma-keep') || el.hasAttribute('data-html2figma-hide')) && !root.hasAttribute('data-html2figma-transform')) continue;
           lockItems(root, items, active);
         }
       }
@@ -252,7 +256,7 @@ async function renderPage(rawUrl, width, options = {}) {
       for (const [root, arrRaw] of groups.entries()) {
         if (arrRaw.length < 2) continue;
         const arr = arrRaw.slice().sort((a, b) => Number(a.getAttribute('data-slide-index') || 0) - Number(b.getAttribute('data-slide-index') || 0));
-        lockItems(root, arr, 'html2figma-active');
+        if (!arr.some(el => el.hasAttribute('data-html2figma-keep') || el.hasAttribute('data-html2figma-hide'))) lockItems(root, arr, 'html2figma-active');
       }
       document.querySelectorAll('.slick-cloned,.swiper-slide-duplicate,[data-clone="true"]').forEach(hide);
 
@@ -283,7 +287,7 @@ async function renderPage(rawUrl, width, options = {}) {
 
     stage = 'первое состояние';
     await prepare();
-    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}[data-html2figma-hide="1"]{display:none!important;visibility:hidden!important;opacity:0!important}' }).catch(() => {});
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}[data-html2figma-hide="1"]{visibility:hidden!important;opacity:0!important}' }).catch(() => {});
 
     stage = 'инициализация после фиксации';
     await Promise.race([
@@ -365,6 +369,8 @@ async function renderPage(rawUrl, width, options = {}) {
       };
       const urls = v => Array.from(new Set(Array.from(String(v || '').matchAll(/url\((?:"|')?([^"')]+)(?:"|')?\)/gi)).map(m => fullTilda(m[1]))));
       const radius = s => Math.max(num(s.borderTopLeftRadius), num(s.borderTopRightRadius), num(s.borderBottomLeftRadius), num(s.borderBottomRightRadius));
+      const borderSides = s => ({top: num(s.borderTopWidth), right: num(s.borderRightWidth), bottom: num(s.borderBottomWidth), left: num(s.borderLeftWidth)});
+      const borderColor = s => color(num(s.borderTopWidth) ? s.borderTopColor : num(s.borderRightWidth) ? s.borderRightColor : num(s.borderBottomWidth) ? s.borderBottomColor : s.borderLeftColor);
       const borderWidth = s => Math.max(num(s.borderTopWidth), num(s.borderRightWidth), num(s.borderBottomWidth), num(s.borderLeftWidth));
       const shadow = v => {
         const raw = String(v || '');
@@ -532,7 +538,7 @@ async function renderPage(rawUrl, width, options = {}) {
         const abs = rect(r), sectionId = sectionFor(e, r), parentKey = nearest(e), ownKey = semantic.get(e), base = relative(abs, parentKey), opacity = num(s.opacity, 1), rad = radius(s), zi = zIndex(s);
         if (ownKey) {
           const ox = String(s.overflowX || s.overflow || '').toLowerCase(), oy = String(s.overflowY || s.overflow || '').toLowerCase();
-          add({ kind: 'container', name: name(e, e.matches('button,[role="button"],.t-btn,.btn,.button,a[class*="btn"],a[class*="button"]') ? ' — кнопка' : ' — контейнер'), ...base, absX: abs.x, absY: abs.y, opacity, fill: fill(s), stroke: borderWidth(s) > .1 ? color(s.borderTopColor) : undefined, strokeWeight: borderWidth(s) || undefined, radius: rad || undefined, shadow: shadow(s.boxShadow) || undefined, sectionId, containerKey: ownKey, parentContainerKey: parentKey, layoutRole: s.display.includes('flex') && s.flexWrap === 'nowrap' && !s.flexDirection.endsWith('reverse') ? 'FLOW' : 'ABSOLUTE', layoutDirection: s.flexDirection.startsWith('row') ? 'HORIZONTAL' : 'VERTICAL', itemSpacing: num(s.flexDirection.startsWith('row') ? s.columnGap : s.rowGap), paddingTop: num(s.paddingTop), paddingRight: num(s.paddingRight), paddingBottom: num(s.paddingBottom), paddingLeft: num(s.paddingLeft), clipsContent: ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy), zIndex: zi, paintPhase: 1 });
+          add({ kind: 'container', name: name(e, e.matches('button,[role="button"],.t-btn,.btn,.button,a[class*="btn"],a[class*="button"]') ? ' — кнопка' : ' — контейнер'), ...base, absX: abs.x, absY: abs.y, opacity, fill: fill(s), strokeSides: borderSides(s), stroke: borderWidth(s) > .1 ? borderColor(s) : undefined, strokeWeight: borderWidth(s) || undefined, radius: rad || undefined, shadow: shadow(s.boxShadow) || undefined, sectionId, containerKey: ownKey, parentContainerKey: parentKey, layoutRole: s.display.includes('flex') && s.flexWrap === 'nowrap' && !s.flexDirection.endsWith('reverse') ? 'FLOW' : 'ABSOLUTE', layoutDirection: s.flexDirection.startsWith('row') ? 'HORIZONTAL' : 'VERTICAL', itemSpacing: num(s.flexDirection.startsWith('row') ? s.columnGap : s.rowGap), paddingTop: num(s.paddingTop), paddingRight: num(s.paddingRight), paddingBottom: num(s.paddingBottom), paddingLeft: num(s.paddingLeft), clipsContent: ['hidden', 'clip'].includes(ox) || ['hidden', 'clip'].includes(oy), zIndex: zi, paintPhase: 1 });
         }
         const childParent = ownKey || parentKey;
         if (e instanceof SVGElement && e.tagName.toLowerCase() === 'svg' && !e.closest('svg svg')) {
@@ -557,7 +563,7 @@ async function renderPage(rawUrl, width, options = {}) {
         }
         if (!ownKey && e !== doc.body && e !== doc.documentElement && !e.matches('#allrecords') && !sectionMap.has(e)) {
           const f = fill(s), bw = borderWidth(s), sh = shadow(s.boxShadow);
-          if ((f || bw > .1 || sh) && !(bgUrls.length && f && f.kind !== 'linear')) add({ kind: 'shape', name: name(e, ' — плашка'), ...base, absX: abs.x, absY: abs.y, opacity, fill: f, stroke: bw > .1 ? color(s.borderTopColor) : undefined, strokeWeight: bw || undefined, radius: rad || undefined, shadow: sh || undefined, sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 0 });
+          if ((f || bw > .1 || sh) && !(bgUrls.length && f && f.kind !== 'linear')) add({ kind: 'shape', name: name(e, ' — плашка'), ...base, absX: abs.x, absY: abs.y, opacity, fill: f, strokeSides: borderSides(s), stroke: bw > .1 ? borderColor(s) : undefined, strokeWeight: bw || undefined, radius: rad || undefined, shadow: sh || undefined, sectionId, parentContainerKey: parentKey, zIndex: zi, paintPhase: 0 });
         }
       }
 
@@ -573,7 +579,7 @@ async function renderPage(rawUrl, width, options = {}) {
 
       const root = doc.scrollingElement || doc.documentElement;
       const height = Math.min(maxHeight, Math.max(root.scrollHeight, doc.body ? doc.body.scrollHeight : 0, 1));
-      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 14 };
+      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 15 };
     }, { maxLayers: MAX_LAYERS, maxHeight: MAX_HEIGHT, viewportWidth: width });
 
     if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');
@@ -637,7 +643,7 @@ module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ ok: false, error: 'Разрешены только GET, POST и OPTIONS' });
-  if (req.method === 'GET' && String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'browser-renderer', version: 14, visualQa: true, clippingAncestors: true, backgroundCapture: true });
+  if (req.method === 'GET' && String(req.query.ping || '') === '1') return res.status(200).json({ ok: true, service: 'browser-renderer', version: 15, visualQa: true, clippingAncestors: true, backgroundCapture: true });
 
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
@@ -664,13 +670,13 @@ module.exports = async function handler(req, res) {
     if (wantsReference) {
       res.setHeader('Content-Type', 'image/webp');
       res.setHeader('X-Final-Url', finalUrl);
-      res.setHeader('X-Renderer-Version', '14');
+      res.setHeader('X-Renderer-Version', '15');
       return res.status(200).send(referenceBuffer);
     }
 
     return res.status(200).json({
       ok: true,
-      mode: 'browser-snapshot-v14-fidelity',
+      mode: 'browser-snapshot-v15-fidelity',
       finalUrl,
       snapshot,
       stats: {
