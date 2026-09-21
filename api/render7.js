@@ -601,19 +601,16 @@ async function renderPage(rawUrl, width, options = {}) {
                   document.head.appendChild(st);
                 }, { captureId, cleanupId }).catch(() => {});
               }
-              const box = await handle.boundingBox();
-              if (box && box.width > .5 && box.height > .5) buffer = await handle.screenshot({ type: 'png' });
-              if (cleanupId) await page.evaluate(id => { const x = document.getElementById(id); if (x) x.remove(); }, cleanupId).catch(() => {});
-              await handle.dispose().catch(() => {});
+              try {
+                const box = await handle.boundingBox();
+                if (box && box.width > .5 && box.height > .5 && box.width <= 4096 && box.height <= 4096) buffer = await handle.screenshot({ type: 'png' });
+              } finally {
+                if (cleanupId) await page.evaluate(id => { const x = document.getElementById(id); if (x) x.remove(); }, cleanupId).catch(() => {});
+                await handle.dispose().catch(() => {});
+              }
             }
           }
-          if (!buffer) {
-            const x = Math.max(0, Math.min(width - 1, Number(item && item.x) || 0));
-            const y = Math.max(0, Math.min(snapshot.height - 1, Number(item && item.y) || 0));
-            const cw = Math.max(1, Math.min(4096, width - x, Number(item && item.width) || 1));
-            const ch = Math.max(1, Math.min(4096, snapshot.height - y, Number(item && item.height) || 1));
-            buffer = await page.screenshot({ type: 'png', clip: { x, y, width: cw, height: ch }, captureBeyondViewport: true });
-          }
+          if (!buffer) throw new Error('Элемент для снимка не найден или превышает допустимый размер');
           captures.push({ id, dataBase64: Buffer.from(buffer).toString('base64') });
         } catch (error) {
           captures.push({ id, error: error && error.message ? error.message : 'Не удалось снять fallback' });
