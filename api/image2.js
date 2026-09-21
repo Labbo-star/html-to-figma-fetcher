@@ -1,4 +1,4 @@
-const legacy = require('./image');
+const legacy = require('../lib/image-core');
 
 const MAX_BYTES = 24 * 1024 * 1024;
 const MAX_DIMENSION = 4096;
