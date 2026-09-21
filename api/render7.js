@@ -579,7 +579,8 @@ async function renderPage(rawUrl, width, options = {}) {
 
       const root = doc.scrollingElement || doc.documentElement;
       const height = Math.min(maxHeight, Math.max(root.scrollHeight, doc.body ? doc.body.scrollHeight : 0, 1));
-      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 15 };
+      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 15,
+        sliderDiagnostics: Array.from(doc.querySelectorAll('.t-slds__items-wrapper')).slice(0,8).map(e => ({rect:rect(e.getBoundingClientRect()), transform:getComputedStyle(e).transform, items:Array.from(e.querySelectorAll('.t-slds__item')).map(i=>({rect:rect(i.getBoundingClientRect()), display:getComputedStyle(i).display, opacity:getComputedStyle(i).opacity, visibility:getComputedStyle(i).visibility, keep:i.getAttribute('data-html2figma-keep'), hide:i.getAttribute('data-html2figma-hide'), bg: i.querySelector('.tn-atom__slds-img')?.getAttribute('style')}))})) };
     }, { maxLayers: MAX_LAYERS, maxHeight: MAX_HEIGHT, viewportWidth: width });
 
     if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');
