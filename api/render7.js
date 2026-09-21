@@ -226,7 +226,6 @@ async function renderPage(rawUrl, width, options = {}) {
 
       const defs = [
         ['.t-slds__items-wrapper', '.t-slds__item', 't-slds__item_active'],
-        ['.t-slds__container', '.t-slds__item', 't-slds__item_active'],
         ['.t-carousel__inner', '.t-carousel__item', 't-carousel__item_active'],
         ['.swiper-wrapper', '.swiper-slide', 'swiper-slide-active'],
         ['.slick-track', '.slick-slide', 'slick-active'],
@@ -234,6 +233,12 @@ async function renderPage(rawUrl, width, options = {}) {
       ];
       for (const [rootSel, itemSel, active] of defs) {
         for (const root of document.querySelectorAll(rootSel)) {
+          if (root.matches('.t-slds__items-wrapper')) {
+            if (root.getAttribute('data-slider-initialized') !== 'true') continue;
+            const timer = Number(root.getAttribute('data-slider-interval-id'));
+            if (timer) clearInterval(timer);
+            root.setAttribute('data-slider-stopped', 'yes');
+          }
           let items = Array.from(root.querySelectorAll(':scope > ' + itemSel));
           if (!items.length) items = Array.from(root.querySelectorAll(itemSel));
           items = items.filter(el =>
@@ -249,7 +254,7 @@ async function renderPage(rawUrl, width, options = {}) {
       const groups = new Map();
       for (const el of document.querySelectorAll('[data-slide-index]')) {
         const p = el.parentElement;
-        if (!p) continue;
+        if (!p || p.matches('.t-slds__items-wrapper')) continue;
         if (!groups.has(p)) groups.set(p, []);
         groups.get(p).push(el);
       }
@@ -287,7 +292,7 @@ async function renderPage(rawUrl, width, options = {}) {
 
     stage = 'первое состояние';
     await prepare();
-    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}[data-html2figma-hide="1"]{visibility:hidden!important;opacity:0!important}' }).catch(() => {});
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}[data-html2figma-hide="1"]{visibility:hidden!important;opacity:0!important}[data-html2figma-keep="1"]{visibility:visible!important;opacity:1!important}' }).catch(() => {});
 
     stage = 'инициализация после фиксации';
     await Promise.race([
@@ -325,8 +330,8 @@ async function renderPage(rawUrl, width, options = {}) {
     }, MAX_HEIGHT);
 
     stage = 'повторная фиксация';
-    await prepare();
     await new Promise(r => setTimeout(r, 250));
+    await prepare();
 
     stage = 'снятие геометрии';
     const snapshot = await page.evaluate(({ maxLayers, maxHeight, viewportWidth }) => {
