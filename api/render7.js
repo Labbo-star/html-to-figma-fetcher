@@ -35,6 +35,11 @@ async function prepareBricksPage(finalize) {
     for(let y=0;y<max;y+=step){window.scrollTo(0,y);window.dispatchEvent(new Event('scroll'));if(window.ScrollTrigger)window.ScrollTrigger.update();await sleep(110);}
     window.scrollTo(0,0);window.dispatchEvent(new Event('scroll'));await sleep(150);
   }
+  // SplitText hides visual word wrappers from assistive technology because
+  // their parent supplies aria-label. That is not visual invisibility.
+  for(const word of root.querySelectorAll('.anim-text .brf-split[aria-hidden="true"]')) {
+    if(word.parentElement && !word.parentElement.closest(excluded))word.removeAttribute('aria-hidden');
+  }
   const marked = new Set();
   if (window.ScrollTrigger && window.ScrollTrigger.getAll) {
     for(const trigger of window.ScrollTrigger.getAll()) {
