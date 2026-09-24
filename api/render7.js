@@ -350,6 +350,22 @@ ${marker}
   if (!patched.includes(sectionOwner)) throw new Error('render17 section owner marker not found');
   patched = patched.replace(sectionOwner, "        const c = e.closest ? e.closest(elementorSnapshot ? '.e-con.e-parent,.elementor-top-section,.elementor-section.elementor-top-section,[data-elementor-type=\"header\"],[data-elementor-type=\"footer\"],header,footer' : '.t-rec,header,section,footer') : null;");
 
+  // A bare text node inside a centered flex box inherits text-align:start.
+  // Chromium centers the glyph with flex; Figma needs the text layer's own
+  // horizontal alignment to be CENTER. Limit this to Elementor and one-line
+  // leaf nodes, where centering cannot shift a neighboring icon or label.
+  const flexTextMarker = "        const contentWidth = Math.max(1, r.width - left - right);";
+  const textAlignMarker = "ta = String(s.textAlign || 'left').toUpperCase(), sp = stackPath(owner);";
+  if (!patched.includes(flexTextMarker) || !patched.includes(textAlignMarker)) throw new Error('render17 flex text marker not found');
+  patched = patched.replace(flexTextMarker, flexTextMarker + String.raw`
+        const centeredBareFlexText = elementorSnapshot &&
+          (s.display === 'flex' || s.display === 'inline-flex') &&
+          owner.children.length === 0 &&
+          nodes.every(node => node.parentElement === owner) &&
+          v.lineCount === 1 &&
+          (String(s.flexDirection || '').startsWith('column') ? s.alignItems : s.justifyContent) === 'center';`);
+  patched = patched.replace(textAlignMarker, "ta = centeredBareFlexText ? 'CENTER' : String(s.textAlign || 'left').toUpperCase(), sp = stackPath(owner);");
+
   const snapshotMarker = "    if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');";
   if (!patched.includes(snapshotMarker)) throw new Error('render17 snapshot marker not found');
   patched = patched.replace(
