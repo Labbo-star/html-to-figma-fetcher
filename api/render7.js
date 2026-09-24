@@ -1,6 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
+// Vercel traces only static requires. The patched v17 source resolves this
+// helper at runtime, so include it explicitly in the deployment bundle.
+require('../lib/elementor-fidelity');
 
 // Keep the proven Tilda/generic renderer untouched on disk. For this public
 // route we compile a narrowly patched copy of v17 in memory. All extra work is
