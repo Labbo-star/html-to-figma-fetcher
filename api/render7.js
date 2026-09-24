@@ -17,6 +17,54 @@ function compilePatchedModule(filename, transform) {
   return mod;
 }
 
+// Runs only in a browser page positively identified as Bricks.
+async function prepareBricksPage(finalize) {
+  if (!document.body || !document.body.classList.contains('bricks-is-frontend') || !document.querySelector('#brx-content')) return null;
+  const root = document.querySelector('#brx-content');
+  const excluded = '[hidden],[aria-hidden="true"],.brx-popup,[role="dialog"],dialog,.swiper-slide:not(.swiper-slide-active),.splide__slide:not(.is-active)';
+  const allowed = el => el instanceof HTMLElement && root.contains(el) && !el.closest(excluded) && getComputedStyle(el).display !== 'none';
+  const stats = { detected:true, finalized:!!finalize, revealed:0, finished:0, serviceTextHidden:0 };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // ScrollSmoother translates a wrapper; measuring while it catches up loses
+  // off-screen reveal states and shifts absolute coordinates.
+  if (!finalize) {
+    const smoother = window.ScrollSmoother && window.ScrollSmoother.get && window.ScrollSmoother.get();
+    if (smoother) { smoother.scrollTop(0); smoother.kill(); }
+    const max = Math.min(60000, Math.max(document.documentElement.scrollHeight,document.body.scrollHeight));
+    const step = Math.max(650,Math.ceil(max/36));
+    for(let y=0;y<max;y+=step){window.scrollTo(0,y);window.dispatchEvent(new Event('scroll'));if(window.ScrollTrigger)window.ScrollTrigger.update();await sleep(110);}
+    window.scrollTo(0,0);window.dispatchEvent(new Event('scroll'));await sleep(150);
+  }
+  const marked = new Set();
+  if (window.ScrollTrigger && window.ScrollTrigger.getAll) {
+    for(const trigger of window.ScrollTrigger.getAll()) {
+      const animation=trigger.animation;
+      if(!animation || !allowed(trigger.trigger)) continue;
+      const tweens=animation.getChildren?animation.getChildren(true,true,false):[animation];
+      const targets=tweens.flatMap(t=>t.targets?t.targets():[]).filter(t=>t instanceof HTMLElement);
+      if(!targets.length || targets.some(t=>!allowed(t)))continue;
+      // Only entrance opacity effects: never finish a carousel or an unrelated
+      // pinning/position-only timeline merely because it uses ScrollTrigger.
+      if(!targets.every(t=>t.matches('.anim-opacity,.brf-split-words,.brf-split-chars,.brf-split-lines') || t.closest('.anim-text')))continue;
+      if(animation.repeat && animation.repeat()===-1)continue;
+      try{if(finalize)trigger.kill(false,true);animation.progress(1,true).pause();stats.finished++;targets.forEach(t=>marked.add(t));}catch{}
+    }
+  }
+  for(const el of root.querySelectorAll('.anim-opacity,.anim-text .brf-split-words,.anim-text .brf-split-chars,.anim-text .brf-split-lines'))if(allowed(el))marked.add(el);
+  for(const el of marked){
+    // Do not reveal elements hidden by a popup/tab ancestor.
+    let blocked=false;for(let n=el.parentElement;n&&n!==root;n=n.parentElement){const cs=getComputedStyle(n);if(cs.display==='none'||cs.visibility==='hidden'){blocked=true;break;}}
+    if(blocked)continue;
+    el.style.setProperty('opacity','1','important');el.style.setProperty('visibility','visible','important');el.setAttribute('data-h2f-bricks-reveal','1');stats.revealed++;
+  }
+  for(const el of document.querySelectorAll('.skip-link,.screen-reader-text,.sr-only')){
+    const cs=getComputedStyle(el),values=(cs.clip.match(/-?[\d.]+/g)||[]).map(Number);
+    const emptyClip=values.length===4&&(values[2]<=values[0]||values[1]<=values[3]);
+    if(emptyClip || /inset\(50%/.test(cs.clipPath)){el.style.setProperty('display','none','important');stats.serviceTextHidden++;}
+  }
+  return stats;
+}
+
 const corePath = require.resolve('../lib/render17');
 const coreModule = compilePatchedModule(corePath, source => {
   const marker = "    stage = 'фиксация первоначального состояния';\n    await prepare();";
@@ -309,6 +357,12 @@ ${marker}
     }
 ` + snapshotMarker
   );
+  const bricksStart = "    stage = 'фиксация первоначального состояния';";
+  patched = patched.replace(bricksStart, "    let bricksPreflight = await page.evaluate(" + prepareBricksPage.toString() + ", false);\n" + bricksStart);
+  const bricksEnd = "    stage = 'снятие геометрии';";
+  if (!patched.includes(bricksEnd)) throw new Error('render17 geometry marker not found');
+  patched = patched.replace(bricksEnd, "    if (bricksPreflight) bricksPreflight.final = await page.evaluate(" + prepareBricksPage.toString() + ", true);\n" + bricksEnd);
+  patched = patched.replace(snapshotMarker, "    if (bricksPreflight) snapshot.bricksPreflight = bricksPreflight;\n" + snapshotMarker);
   return patched;
 });
 require.cache[corePath] = coreModule;
@@ -326,6 +380,8 @@ const v22Module = compilePatchedModule(v22Path, source => {
   if (patched.includes(statsMarker)) {
     patched = patched.replace(statsMarker, statsMarker + "\n        elementorPreflight: snapshot.elementorPreflight || null,\n        elementorFidelity: snapshot.elementorFidelity || null,");
   }
+  patched = patched.replace('const framework = frameworkOf(snapshot);', "const framework = snapshot.bricksPreflight ? 'bricks' : frameworkOf(snapshot);");
+  patched = patched.replace(statsMarker, statsMarker + "\n        bricksPreflight: snapshot.bricksPreflight || null,");
   return patched;
 });
 require.cache[v22Path] = v22Module;
