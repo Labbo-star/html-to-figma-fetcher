@@ -397,10 +397,10 @@ ${marker}
   patched = patched.replace(textColorMarker, "fill: { kind: 'solid', color: color(textColor) }, text: v.text");
 
   const snapshotInit = "      const win = window, doc = document, layers = [];";
-  const snapshotReturn = "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17 };";
+  const snapshotReturn = "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17, pageBackground };";
   if (!patched.includes(snapshotInit) || !patched.includes(snapshotReturn)) throw new Error('render17 snapshot init marker not found');
   patched = patched.replace(snapshotInit, snapshotInit + "\n      const elementorDynamicText = (" + finalizeElementorDynamicText.toString() + ")();");
-  patched = patched.replace(snapshotReturn, "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17, elementorDynamicText };");
+  patched = patched.replace(snapshotReturn, "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17, pageBackground, elementorDynamicText };");
 
   const snapshotMarker = "    if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');";
   if (!patched.includes(snapshotMarker)) throw new Error('render17 snapshot marker not found');
