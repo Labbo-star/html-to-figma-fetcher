@@ -47,10 +47,20 @@ async function visualLayersFixture() {
       absX: 30 + i * 55, absY: 7771, width: 50, height: 50,
       containerKey: `social-${i}`, sectionId: 'section-12', stackPath: [], z: 278 + i })),
   ];
+  const decorativeSvg = {
+    closest: selector => selector.includes('aria-hidden') ? decorativeSvg : null,
+    parentElement: { closest: () => null },
+    getBoundingClientRect: () => ({ left: 200, top: 7626, width: 20, height: 20 }),
+    setAttribute: () => {},
+  };
   const page = {
     evaluate: async fn => {
       const source = String(fn);
-      if (source.includes("'.elementor .elementor-button-icon svg")) return [{ id: '0', x: 200, y: 7626, width: 20, height: 20 }];
+      if (source.includes("'.elementor .elementor-button-icon svg")) return vm.runInNewContext(`(${source})()`, {
+        document: { querySelectorAll: () => [decorativeSvg] },
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
+        scrollX: 0, scrollY: 0,
+      });
       if (source.includes("'.elementor label'")) return [{ x: 730, y: 7625, width: 22, height: 22,
         border: 1, color: 'rgb(173, 181, 189)', background: 'rgba(0, 0, 0, 0)', radius: 8 }];
       if (source.includes('data-h2f-social-icon-capture') && source.includes('const brands'))
