@@ -73,6 +73,32 @@ async function prepareBricksPage(finalize) {
   return stats;
 }
 
+// Run synchronously at the start of geometry extraction, after the page's
+// animation/lazy-load passes. JS counters can otherwise tick between passes.
+function finalizeElementorDynamicText() {
+  const stats = { counters: 0, phoneLabels: 0 };
+  if (!document.querySelector('.elementor,[data-elementor-id]')) return stats;
+  for (const el of document.querySelectorAll('.elementor-counter-number[data-to-value]')) {
+    if (el.closest('[aria-hidden="true"],dialog,[role="dialog"]')) continue;
+    const raw = String(el.getAttribute('data-to-value') || '').trim();
+    if (!/^-?\d{1,9}$/.test(raw)) continue;
+    const delimiter = String(el.getAttribute('data-delimiter') || '');
+    const value = delimiter && /^.{1,3}$/.test(delimiter)
+      ? raw.replace(/\B(?=(\d{3})+(?!\d))/g, delimiter) : raw;
+    if (el.textContent !== value) { el.textContent = value; stats.counters++; }
+  }
+  for (const link of document.querySelectorAll('.elementor a[href^="tel:"]')) {
+    if (link.closest('[aria-hidden="true"],dialog,[role="dialog"]')) continue;
+    const label = link.querySelector('.elementor-button-text');
+    if (!label || label.querySelectorAll('small').length < 5) continue;
+    const full = String(label.textContent || '').replace(/\s+/g, ' ').trim();
+    if (full.length < 8 || !/\d/.test(full)) continue;
+    label.textContent = full;
+    stats.phoneLabels++;
+  }
+  return stats;
+}
+
 const corePath = require.resolve('../lib/render17');
 const coreModule = compilePatchedModule(corePath, source => {
   const marker = "    stage = 'фиксация первоначального состояния';\n    await prepare();";
@@ -350,6 +376,32 @@ ${marker}
   if (!patched.includes(sectionOwner)) throw new Error('render17 section owner marker not found');
   patched = patched.replace(sectionOwner, "        const c = e.closest ? e.closest(elementorSnapshot ? '.e-con.e-parent,.elementor-top-section,.elementor-section.elementor-top-section,[data-elementor-type=\"header\"],[data-elementor-type=\"footer\"],header,footer' : '.t-rec,header,section,footer') : null;");
 
+  // A bare text node inside a centered flex box inherits text-align:start.
+  // Chromium centers the glyph with flex; Figma needs the text layer's own
+  // horizontal alignment to be CENTER. Limit this to Elementor and one-line
+  // leaf nodes, where centering cannot shift a neighboring icon or label.
+  const flexTextMarker = "        const contentWidth = Math.max(1, r.width - left - right);";
+  const textAlignMarker = "ta = String(s.textAlign || 'left').toUpperCase(), sp = stackPath(owner);";
+  const textColorMarker = "fill: { kind: 'solid', color: color(s.color) }, text: v.text";
+  if (!patched.includes(flexTextMarker) || !patched.includes(textAlignMarker) || !patched.includes(textColorMarker)) throw new Error('render17 text marker not found');
+  patched = patched.replace(flexTextMarker, flexTextMarker + String.raw`
+        const centeredBareFlexText = elementorSnapshot &&
+          (s.display === 'flex' || s.display === 'inline-flex') &&
+          owner.children.length === 0 &&
+          nodes.every(node => node.parentElement === owner) &&
+          v.lineCount === 1 &&
+          (String(s.flexDirection || '').startsWith('column') ? s.alignItems : s.justifyContent) === 'center';
+        const leafColors = elementorSnapshot ? nodes.map(node => win.getComputedStyle(node.parentElement).color) : [];
+        const textColor = leafColors.length && leafColors.every(value => value === leafColors[0]) ? leafColors[0] : s.color;`);
+  patched = patched.replace(textAlignMarker, "ta = centeredBareFlexText ? 'CENTER' : String(s.textAlign || 'left').toUpperCase(), sp = stackPath(owner);");
+  patched = patched.replace(textColorMarker, "fill: { kind: 'solid', color: color(textColor) }, text: v.text");
+
+  const snapshotInit = "      const win = window, doc = document, layers = [];";
+  const snapshotReturn = "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17 };";
+  if (!patched.includes(snapshotInit) || !patched.includes(snapshotReturn)) throw new Error('render17 snapshot init marker not found');
+  patched = patched.replace(snapshotInit, snapshotInit + "\n      const elementorDynamicText = (" + finalizeElementorDynamicText.toString() + ")();");
+  patched = patched.replace(snapshotReturn, "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17, elementorDynamicText };");
+
   const snapshotMarker = "    if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');";
   if (!patched.includes(snapshotMarker)) throw new Error('render17 snapshot marker not found');
   patched = patched.replace(
@@ -386,7 +438,7 @@ const v22Module = compilePatchedModule(v22Path, source => {
   let patched = source.replace(marker, "    if (framework === 'elementor' && !(snapshot.elementorPreflight && snapshot.elementorPreflight.detected)) {");
   const statsMarker = '        elementorSupplementLayers: revealed.layers.length,';
   if (patched.includes(statsMarker)) {
-    patched = patched.replace(statsMarker, statsMarker + "\n        elementorPreflight: snapshot.elementorPreflight || null,\n        elementorFidelity: snapshot.elementorFidelity || null,");
+    patched = patched.replace(statsMarker, statsMarker + "\n        elementorPreflight: snapshot.elementorPreflight || null,\n        elementorDynamicText: snapshot.elementorDynamicText || null,\n        elementorFidelity: snapshot.elementorFidelity || null,");
   }
   patched = patched.replace('const framework = frameworkOf(snapshot);', "const framework = snapshot.bricksPreflight ? 'bricks' : frameworkOf(snapshot);");
   patched = patched.replace(statsMarker, statsMarker + "\n        bricksPreflight: snapshot.bricksPreflight || null,");
