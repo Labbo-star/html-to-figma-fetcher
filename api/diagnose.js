@@ -1,4 +1,4 @@
-const render = require('./render7');
+const render = require('./render25');
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
