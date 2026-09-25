@@ -60,15 +60,15 @@ module.exports = async function handler(req, res) {
     }
 
     const layers = Array.isArray(snapResult.body.snapshot.layers) ? snapResult.body.snapshot.layers : [];
-    const candidates = layers.filter(layer => layer && layer.kind === 'image' && (layer.captureId || layer.backgroundCaptureId)).slice(0, limit);
+    const candidates = layers.filter(layer => layer && layer.kind === 'image' && layer.captureId).slice(0, limit);
     if (!candidates.length) {
       return res.status(200).json({ ok: true, url: String(raw), width, candidates: 0, requested: 0, successful: 0, captures: [] });
     }
 
     const clips = candidates.map((layer, index) => ({
       id: `diag-${index}`,
-      captureId: String(layer.captureId || layer.backgroundCaptureId),
-      captureMode: layer.backgroundCaptureId && !layer.captureId ? 'background' : 'element',
+      captureId: String(layer.captureId),
+      captureMode: layer.captureMode === 'background' ? 'background' : 'element',
     }));
 
     const captureResult = await runRenderer({
@@ -106,7 +106,7 @@ module.exports = async function handler(req, res) {
       rendererVersion: snapResult.body.snapshot.rendererVersion,
       framework: snapResult.body.snapshot.framework,
       imageLayers: layers.filter(layer => layer && layer.kind === 'image').length,
-      captureReadyLayers: layers.filter(layer => layer && layer.kind === 'image' && (layer.captureId || layer.backgroundCaptureId)).length,
+      captureReadyLayers: layers.filter(layer => layer && layer.kind === 'image' && layer.captureId).length,
       requested: clips.length,
       successful: captures.filter(item => item.ok).length,
       captures,
