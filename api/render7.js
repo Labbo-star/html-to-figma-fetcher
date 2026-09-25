@@ -4,11 +4,11 @@ const Module = require('node:module');
 // Vercel traces only static requires. The patched v17 source resolves this
 // helper at runtime, so include it explicitly in the deployment bundle.
 require('../lib/elementor-fidelity');
+require('../lib/tilda-text-fidelity');
 
-// Keep the proven Tilda/generic renderer untouched on disk. For this public
-// route we compile a narrowly patched copy of v17 in memory. All extra work is
-// gated by positive Elementor detection, so Tilda continues through the proven
-// v17 path without Elementor geometry/reveal mutations.
+// For this public route, compile the Elementor-specific patches in memory.
+// Tilda's large custom-font text is captured in the core renderer and the
+// Elementor geometry/reveal patches remain gated by positive detection.
 function compilePatchedModule(filename, transform) {
   const source = fs.readFileSync(filename, 'utf8');
   const patched = transform(source);
@@ -397,10 +397,10 @@ ${marker}
   patched = patched.replace(textColorMarker, "fill: { kind: 'solid', color: color(textColor) }, text: v.text");
 
   const snapshotInit = "      const win = window, doc = document, layers = [];";
-  const snapshotReturn = "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17 };";
+  const snapshotReturn = "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17, pageBackground };";
   if (!patched.includes(snapshotInit) || !patched.includes(snapshotReturn)) throw new Error('render17 snapshot init marker not found');
   patched = patched.replace(snapshotInit, snapshotInit + "\n      const elementorDynamicText = (" + finalizeElementorDynamicText.toString() + ")();");
-  patched = patched.replace(snapshotReturn, "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17, elementorDynamicText };");
+  patched = patched.replace(snapshotReturn, "      return { width: viewportWidth, height, sections, layers, truncated, rendererVersion: 17, pageBackground, elementorDynamicText };");
 
   const snapshotMarker = "    if (!snapshot.layers.length) throw new Error('После рендера не найдено видимых слоёв');";
   if (!patched.includes(snapshotMarker)) throw new Error('render17 snapshot marker not found');
