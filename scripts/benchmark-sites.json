@@ -1,0 +1,22 @@
+[
+  {"id":"rocketway","url":"https://rocketway.pro/","expectedFramework":"elementor","complexity":"dynamic","minimum":{"layers":380,"sections":10,"images":10,"texts":80},"features":["animated-gradient","iframe-reviews","counter","quiz","forms"]},
+  {"id":"hollyhands","url":"https://hollyhands.ru/","expectedFramework":"tilda","complexity":"animated","minimum":{"layers":530,"sections":12,"images":100,"texts":50},"features":["zero-block","intoview","font-raster"]},
+  {"id":"outmeet","url":"https://outmeet.tilda.ws/","expectedFramework":"tilda","complexity":"animated","minimum":{"layers":150,"sections":9,"images":30,"texts":35},"features":["fadeinup","hidden-media","repeatability"]},
+  {"id":"tdmodule","url":"https://tdmodule.ru/","expectedFramework":"bricks","complexity":"animated","minimum":{"layers":240,"sections":7,"images":15,"texts":25},"features":["bricks","split-text","gsap"]},
+  {"id":"vetgalaxy","url":"https://vetgalaxy.vet/","expectedFramework":"tilda","complexity":"dynamic","minimum":{"layers":330,"sections":18,"images":35,"texts":35},"features":["carousel","animal-images","typography"]},
+  {"id":"bricks-klinika","url":"https://klinika22.pl/","expectedFramework":"bricks","complexity":"standard","features":["bricks-showcase","multilingual"]},
+  {"id":"bricks-dnagency","url":"https://www.dnagency.fr/","expectedFramework":"bricks","complexity":"dynamic","features":["bricks-showcase","agency"]},
+  {"id":"bricks-lss","url":"https://www.lssprestige.co.uk/","expectedFramework":"bricks","complexity":"standard","features":["bricks-showcase","images"]},
+  {"id":"bricks-nourvillas","url":"https://nourvillasbelize.com/","expectedFramework":"bricks","complexity":"dynamic","features":["bricks-showcase","hero"]},
+  {"id":"bricks-heroic","url":"https://heroicsignatures.com/","expectedFramework":"bricks","complexity":"standard","features":["bricks-showcase","commerce"]},
+  {"id":"bricks-stinson","url":"https://stinson.in/","expectedFramework":"bricks","complexity":"animated","features":["bricks-showcase","agency"]},
+  {"id":"bricks-happybunch","url":"https://happybunch.design/","expectedFramework":"bricks","complexity":"animated","features":["bricks-showcase","animations"]},
+  {"id":"bricks-junn","url":"https://junnstudios.com/","expectedFramework":"bricks","complexity":"standard","features":["bricks-showcase","studio"]},
+  {"id":"elementor-katherine","url":"https://katherinemaslen.com/","expectedFramework":"elementor","complexity":"animated","features":["elementor-showcase","scrollytelling"]},
+  {"id":"elementor-modern","url":"https://www.moderncreatives.com/","expectedFramework":"elementor","complexity":"standard","features":["elementor-showcase","agency"]},
+  {"id":"elementor-kreate","url":"https://www.kreateagency.co.za/","expectedFramework":"elementor","complexity":"dynamic","features":["elementor-showcase","portfolio"]},
+  {"id":"elementor-fourstripes","url":"https://fourstripes.com.au/","expectedFramework":"elementor","complexity":"standard","features":["elementor-showcase","services"]},
+  {"id":"tilda-pulsefit","url":"https://pulsefit.ru/","expectedFramework":"tilda","complexity":"standard","features":["tilda","fitness"]},
+  {"id":"tilda-gardenspa","url":"https://gardenspahotel.ru/","expectedFramework":"tilda","complexity":"dynamic","features":["tilda","hotel"]},
+  {"id":"tilda-nicely","url":"https://nicely-private-rock.tilda.ws/","expectedFramework":"tilda","complexity":"animated","features":["tilda","zero-block"]}
+]
