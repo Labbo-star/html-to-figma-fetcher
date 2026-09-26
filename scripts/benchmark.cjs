@@ -40,6 +40,7 @@ async function diagnose(site, run) {
     const snap = response.snapshot || {}, stats = response.stats || {};
     Object.assign(result, {
       ok: status === '200' && response.ok === true && response.rendererStatus === true,
+      blocked: status === '422' && response.body?.code === 'SITE_CHALLENGE',
       framework: snap.framework || stats.framework,
       frameworkMatches: snap.framework === site.expectedFramework,
       layers: snap.layers || 0, sections: snap.sections || 0,
@@ -60,12 +61,13 @@ async function diagnose(site, run) {
     if (result.truncated) result.checks.push('truncated');
     if (result.fidelityPass.startsWith('degraded')) result.checks.push('fidelityPass');
     if (!result.ok) result.checks.push('http');
+    if (result.blocked) result.checks = site.accessChallengePossible ? [] : ['access-challenge'];
   } catch (e) {
     result.ok = false;
     result.error = error || e.message;
     result.checks = ['http'];
   }
-  console.log(`${result.checks.length ? 'FAIL' : 'PASS'} ${site.id} #${run} ${result.elapsedMs}ms layers=${result.layers ?? '-'} images=${result.images ?? '-'} issues=${result.checks.join(',') || '-'}${result.error ? ' error=' + result.error : ''}`);
+  console.log(`${result.blocked ? 'BLOCKED' : result.checks.length ? 'FAIL' : 'PASS'} ${site.id} #${run} ${result.elapsedMs}ms layers=${result.layers ?? '-'} images=${result.images ?? '-'} issues=${result.checks.join(',') || '-'}${result.error ? ' error=' + result.error : ''}`);
   return result;
 }
 
@@ -76,7 +78,8 @@ async function diagnose(site, run) {
   const report = {
     generatedAt: new Date().toISOString(), base, width,
     results,
-    summary: { total: results.length, passed: results.filter(r => !r.checks.length).length,
+    summary: { total: results.length, passed: results.filter(r => !r.blocked && !r.checks.length).length,
+      blocked: results.filter(r => r.blocked).length,
       failed: results.filter(r => r.checks.length).length },
   };
   fs.writeFileSync(path.join(outDir, `summary-${width}.json`), JSON.stringify(report, null, 2) + '\n');
