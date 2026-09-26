@@ -5,6 +5,7 @@ const Module = require('node:module');
 // helper at runtime, so include it explicitly in the deployment bundle.
 require('../lib/elementor-fidelity');
 require('../lib/tilda-text-fidelity');
+require('../lib/browser-fidelity');
 
 // For this public route, compile the Elementor-specific patches in memory.
 // Tilda's large custom-font text is captured in the core renderer and the

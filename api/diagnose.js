@@ -145,7 +145,12 @@ module.exports = async function handler(req, res) {
   try {
     const result = await runRenderer({ method: 'GET', query: { url: String(raw), width: String(width) }, headers: req.headers || {} });
     if (result.statusCode !== 200 || result.kind !== 'json' || !result.body || !result.body.snapshot) {
-      return res.status(result.statusCode || 500).json({ ok: false, rendererStatus: result.statusCode, body: result.body || null });
+      return res.status(result.statusCode || 500).json({
+        ok: false, rendererStatus: result.statusCode,
+        code: result.body && result.body.code,
+        error: result.body && result.body.error,
+        body: result.body || null,
+      });
     }
     return res.status(200).json(summarize(result.body));
   } catch (error) {
