@@ -18,5 +18,7 @@
   {"id":"elementor-fourstripes","url":"https://fourstripes.com.au/","expectedFramework":"elementor","complexity":"standard","features":["elementor-showcase","services"]},
   {"id":"tilda-pulsefit","url":"https://pulsefit.ru/","expectedFramework":"tilda","complexity":"standard","features":["tilda","fitness"]},
   {"id":"tilda-gardenspa","url":"https://gardenspahotel.ru/","expectedFramework":"tilda","complexity":"dynamic","features":["tilda","hotel"]},
-  {"id":"tilda-nicely","url":"https://nicely-private-rock.tilda.ws/","expectedFramework":"tilda","complexity":"animated","features":["tilda","zero-block"]}
+  {"id":"tilda-nicely","url":"https://nicely-private-rock.tilda.ws/","expectedFramework":"tilda","complexity":"animated","features":["tilda","zero-block"]},
+  {"id":"webflow-ori","url":"https://ori-koji-global.webflow.io/","expectedFramework":"generic","sourceBuilder":"webflow","complexity":"interactive","features":["webflow","spline","3d","scroll-animation"]},
+  {"id":"webflow-martian","url":"https://martians-font.webflow.io/","expectedFramework":"generic","sourceBuilder":"webflow","complexity":"animated","features":["webflow","custom-font","scroll-animation"]}
 ]
