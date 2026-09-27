@@ -58,4 +58,16 @@ const { markReliableImageCaptures, mergeBrowserFidelity, isDuplicate } = render.
   assert.equal(isDuplicate(snapshot, { kind: 'shape', absX: 80, absY: 80, width: 20, height: 20 }), false);
 }
 
-console.log('fidelity-pass: ok');
+{
+  const { chromiumExecutablePath } = require('../lib/render17')._test;
+  let calls = 0, finish;
+  const chromium = { executablePath() { calls++; return new Promise(resolve => { finish = resolve; }); } };
+  (async () => {
+    const first = chromiumExecutablePath(chromium), second = chromiumExecutablePath(chromium);
+    await Promise.resolve();
+    assert.equal(calls, 1);
+    finish('/tmp/chromium');
+    assert.deepEqual(await Promise.all([first, second]), ['/tmp/chromium', '/tmp/chromium']);
+    console.log('fidelity-pass: ok');
+  })().catch(error => { console.error(error); process.exitCode = 1; });
+}
