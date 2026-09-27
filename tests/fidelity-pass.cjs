@@ -6,19 +6,27 @@ const { markReliableImageCaptures, mergeBrowserFidelity, isDuplicate } = render.
   const snapshot = {
     framework: 'tilda',
     layers: [
-      { kind: 'image', captureId: 'imgcap-0', captureSafe: true, url: 'https://static.tildacdn.com/a.jpg' },
-      { kind: 'image', captureId: 'imgcap-1', captureSafe: true, url: 'https://example.com/b.jpg' },
+      { kind: 'image', captureId: 'imgcap-0', captureSafe: true, url: 'https://static.tildacdn.com/a.jpg', preferCapture: true },
+      { kind: 'image', captureId: 'imgcap-1', captureSafe: true, url: 'https://example.com/b.svg' },
       { kind: 'image', captureId: 'imgcap-2', captureSafe: false, url: 'https://static.tildacdn.com/c.jpg' },
+      { kind: 'image', captureId: 'bgcap-0', captureSafe: true, captureMode: 'background', url: 'https://static.tildacdn.com/photo.png', backgroundSize: 'cover', preferCapture: true },
+      { kind: 'image', captureId: 'bgcap-1', captureSafe: true, captureMode: 'background', url: 'https://static.tildacdn.com/photo.jpg', backgroundSize: '101.9%', preferCapture: true },
+      { kind: 'image', captureId: 'imgcap-3', captureSafe: true },
     ],
   };
-  assert.equal(markReliableImageCaptures(snapshot), 2);
-  assert.equal(snapshot.layers[0].preferCapture, true);
-  assert.equal(snapshot.layers[1].preferCapture, true);
+  assert.equal(markReliableImageCaptures(snapshot), 1);
+  assert.equal(snapshot.layers[0].preferCapture, false);
+  assert.equal(snapshot.layers[1].preferCapture, false);
   assert.equal(snapshot.layers[2].preferCapture, undefined);
+  assert.equal(snapshot.layers[3].preferCapture, false); // transparent pet image
+  assert.equal(snapshot.layers[4].preferCapture, false); // cropped photo
+  assert.equal(snapshot.layers[5].preferCapture, true);
 }
 
 {
   const snapshot = {
+    width: 1440,
+    height: 900,
     sections: [{ id: 's1', y: 0, height: 900 }],
     layers: [
       { kind: 'svg', x: 20, y: 30, absX: 20, absY: 30, width: 24, height: 24, svg: '<svg><path fill="currentColor"/></svg>' },
@@ -30,6 +38,7 @@ const { markReliableImageCaptures, mergeBrowserFidelity, isDuplicate } = render.
     fixed: [
       { kind: 'text', x: 100, y: 20, absX: 100, absY: 20, width: 100, height: 20, text: 'Меню' },
       { kind: 'text', x: 220, y: 20, absX: 220, absY: 20, width: 100, height: 20, text: 'Контакты' },
+      { kind: 'text', x: 1480, y: 20, absX: 1480, absY: 20, width: 100, height: 20, text: 'Скрытое мобильное меню' },
     ],
     pseudos: [{ kind: 'shape', x: 500, y: 300, absX: 500, absY: 300, width: 30, height: 30, fill: { kind: 'solid', color: { r: 1, g: 0, b: 0, a: 1 } } }],
   });
@@ -40,6 +49,7 @@ const { markReliableImageCaptures, mergeBrowserFidelity, isDuplicate } = render.
   assert.equal(snapshot.layers.filter(x => x.kind === 'text' && x.text === 'Меню').length, 1);
   assert.equal(snapshot.layers.some(x => x.kind === 'text' && x.text === 'Контакты'), true);
   assert.equal(snapshot.layers.find(x => x.text === 'Контакты').sectionId, 's1');
+  assert.equal(snapshot.layers.some(x => x.text === 'Скрытое мобильное меню'), false);
 }
 
 {
