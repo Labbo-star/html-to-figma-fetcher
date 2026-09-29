@@ -23,9 +23,12 @@ const { augmentElementorSnapshot } = require('../lib/elementor-fidelity');
                       radial-gradient(circle at 80% 65%, #078cff 0%, transparent 65%), #fff; }
         #hero > div { width: 100%; height: 100%; background: #000; }
         #reviews { display: block; margin: 80px 20px; width: 900px; height: 300px; border: 0; }
+        .elementor-social-icons { margin: 30px 20px; }
+        .elementor-social-icon svg { width: 32px; height: 32px; fill: #ff4500; }
       </style>
       <main class="elementor"><div id="hero"><div>Separate editable headline</div></div>
-      <iframe id="reviews" srcdoc="<body style='background:white;font:24px sans-serif;color:#007bff'><article style='padding:24px;background:#dbeaff'>Customer review</article></body>"></iframe></main>`);
+      <iframe id="reviews" srcdoc="<body style='background:white;font:24px sans-serif;color:#007bff'><article style='padding:24px;background:#dbeaff'>Customer review</article></body>"></iframe>
+      <div class="elementor-social-icons"><a class="elementor-icon elementor-social-icon" href="https://t.me/example" aria-label="Contact us"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14"/></svg></a></div></main>`);
     const rects = await page.evaluate(() => Object.fromEntries(['hero', 'reviews'].map(id => {
       const r = document.getElementById(id).getBoundingClientRect();
       return [id, { x: r.x, y: r.y, width: r.width, height: r.height }];
@@ -40,7 +43,8 @@ const { augmentElementorSnapshot } = require('../lib/elementor-fidelity');
     const stats = await augmentElementorSnapshot(page, snapshot, snapshot.width);
     assert.equal(stats.radialBackgrounds, 1);
     assert.equal(stats.iframeCaptures, 1);
-    const hero = snapshot.layers[0], review = snapshot.layers.at(-1);
+    assert.equal(stats.socialIconCaptures, 1, 'social icons without Russian headings or a fixed list of hosts are captured');
+    const hero = snapshot.layers[0], review = snapshot.layers.find(l => l.name === 'iframe widget visual capture');
     assert.equal(hero.kind, 'image');
     assert.equal(hero.fill, undefined);
     assert.equal(review.parentContainerKey, 'iframe-0');
