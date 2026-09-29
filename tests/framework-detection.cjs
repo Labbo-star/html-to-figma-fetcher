@@ -10,6 +10,8 @@ const webflow = {
   ],
 };
 assert.equal(frameworkOf(webflow), 'generic', 'ordinary Webflow classes must not trigger Elementor fixes');
+assert.equal(frameworkOf({ ...webflow, siteSignals: { webflow: true } }), 'webflow', 'verified Webflow DOM markers select its profile');
+assert.equal(frameworkOf({ ...webflow, siteSignals: { webflow: false } }), 'generic', 'similar class names are not sufficient');
 
 const elementor = {
   layers: [
@@ -20,4 +22,5 @@ const elementor = {
 assert.equal(frameworkOf(elementor), 'elementor');
 assert.equal(frameworkOf({ layers: [], elementorPreflight: { detected: true } }), 'elementor');
 assert.equal(frameworkOf({ layers: [{ name: 'div.t-rec' }, { name: 'div.t396' }] }), 'tilda');
-console.log('PASS Webflow class fragments cannot be mistaken for Elementor');
+assert.equal(frameworkOf({ layers: [{ name: 'div.t-rec' }, { name: 'div.t396' }], siteSignals: { webflow: true } }), 'tilda', 'builder-specific markup wins over stale signals');
+console.log('PASS engine selection uses positive DOM evidence and protects the generic fallback');

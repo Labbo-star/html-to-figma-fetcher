@@ -63,7 +63,7 @@ async function visualLayersFixture() {
       });
       if (source.includes("'.elementor label'")) return [{ x: 730, y: 7625, width: 22, height: 22,
         border: 1, color: 'rgb(173, 181, 189)', background: 'rgba(0, 0, 0, 0)', radius: 8 }];
-      if (source.includes('data-h2f-social-icon-capture') && source.includes('const brands'))
+      if (source.includes('data-h2f-social-icon-capture') && source.includes('.elementor-social-icons a[href]'))
         return Array.from({ length: 5 }, (_, i) => ({ id: String(i), x: 42 + i * 55, y: 7783, width: 25, height: 25 }));
       if (source.includes('data-h2f-radial-capture') || source.includes("'.elementor iframe'")) return [];
       return null;
